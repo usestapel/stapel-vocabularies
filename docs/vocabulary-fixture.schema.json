@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/usestapel/stapel-vocabularies/blob/main/docs/vocabulary-fixture.schema.json",
+  "title": "Vocabulary fixture",
+  "description": "One reference vocabulary as a reviewable file: its levels, its terms and the parent/child edges between them (spec §3.6). Written by stapel_vocabularies.convert (or the Avito importer), read by `manage.py load_vocabulary`. Byte-stable by construction: terms are sorted by (level index, code) and edges by the emitted 4-tuple, and codes are assigned in label sort order — so re-converting the same catalogue produces the same file, and a diff shows what the vendor changed rather than what the parser felt like doing.",
+  "type": "object",
+  "required": ["slug", "name", "levels", "terms"],
+  "additionalProperties": false,
+  "properties": {
+    "slug": {
+      "type": "string",
+      "description": "Identity of the vocabulary — what a feature's optionsRef names.",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "name": {
+      "type": "string",
+      "description": "Human name of the catalogue.",
+      "maxLength": 200
+    },
+    "source": {
+      "type": "string",
+      "description": "Where the catalogue came from (a URL, a filename). Provenance, not a fetcher: nothing in this module downloads it.",
+      "maxLength": 255
+    },
+    "levels": {
+      "type": "array",
+      "description": "The levels, root first. A level's parent must be declared BEFORE it, which is the whole acyclicity argument — a level can only point backwards, so no chain of parents returns to where it started.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Level" }
+    },
+    "terms": {
+      "type": "array",
+      "description": "One row per term: [level, code, label, external_id]. Sorted by (level index, code).",
+      "items": { "$ref": "#/$defs/Term" }
+    },
+    "edges": {
+      "type": "array",
+      "description": "One row per parent/child pair: [parent_level, parent_code, child_level, child_code]. Sorted by the tuple. Both endpoints must appear in `terms`.",
+      "items": { "$ref": "#/$defs/Edge" }
+    }
+  },
+  "$defs": {
+    "Level": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "parent": {
+          "type": ["string", "null"],
+          "description": "Name of the level this one hangs off; absent or null for a root level.",
+          "maxLength": 64
+        }
+      }
+    },
+    "Term": {
+      "type": "array",
+      "description": "[level, code, label, external_id]. The code is a transliterated slug of the label ([a-z0-9-], <= 128), deduplicated within its level by -2/-3 suffixes in label sort order; external_id carries the source catalogue's own id when it has one, and never becomes the code.",
+      "minItems": 3,
+      "maxItems": 4,
+      "prefixItems": [
+        { "type": "string", "maxLength": 64, "description": "Level name." },
+        { "type": "string", "pattern": "^[a-z0-9-]+$", "maxLength": 128, "description": "Term code." },
+        { "type": "string", "maxLength": 255, "description": "Label in the catalogue's own language." },
+        { "type": ["string", "null"], "maxLength": 64, "description": "External id, or null." }
+      ],
+      "items": false
+    },
+    "Edge": {
+      "type": "array",
+      "description": "[parent_level, parent_code, child_level, child_code].",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        { "type": "string", "maxLength": 64 },
+        { "type": "string", "pattern": "^[a-z0-9-]+$", "maxLength": 128 },
+        { "type": "string", "maxLength": 64 },
+        { "type": "string", "pattern": "^[a-z0-9-]+$", "maxLength": 128 }
+      ],
+      "items": false
+    }
+  }
+}
