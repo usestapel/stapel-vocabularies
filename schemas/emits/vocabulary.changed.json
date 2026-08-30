@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "vocabulary.changed",
+  "description": "A vocabulary's terms or levels were replaced — emitted once per loaded fixture, inside the load's transaction. Consumers invalidate anything cached by this vocabulary's revision: a CommResolver's describe, a term listing an edge cached by ETag, a client-side typeahead.",
+  "type": "object",
+  "required": ["slug", "revision"],
+  "properties": {
+    "slug": {
+      "type": "string",
+      "description": "Slug of the affected vocabulary.",
+      "maxLength": 64
+    },
+    "revision": {
+      "type": "integer",
+      "description": "The vocabulary's revision after the change (monotonic per model)."
+    }
+  },
+  "additionalProperties": false
+}

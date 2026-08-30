@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "vocabularies.describe",
+  "description": "Ask for one vocabulary's level structure. This object validates the request payload; the response is {slug, levels, revision} or null when there is no such vocabulary — see $defs.Description. The revision is what a remote resolver caches the answer by: without it a CommResolver could only expire a describe on a timer, and a re-imported catalogue would keep validating against the levels it used to have.",
+  "type": "object",
+  "required": ["vocabulary"],
+  "properties": {
+    "vocabulary": {
+      "type": "string",
+      "description": "Slug of the vocabulary to describe.",
+      "maxLength": 64
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Description": {
+      "type": ["object", "null"],
+      "description": "The response. null means no vocabulary carries this slug — the same answer stapel-attributes' config validation turns into INVALID_CONFIG.",
+      "required": ["slug", "levels", "revision"],
+      "properties": {
+        "slug": { "type": "string" },
+        "levels": {
+          "type": "array",
+          "description": "Levels root first. A level's parent is always a level declared before it, which is what makes the level graph acyclic by construction.",
+          "items": { "$ref": "#/$defs/Level" }
+        },
+        "revision": {
+          "type": "integer",
+          "description": "The vocabulary's current revision; bumped once per loaded fixture and carried by the vocabulary.changed event."
+        }
+      }
+    },
+    "Level": {
+      "type": "object",
+      "required": ["name", "parent"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 64 },
+        "parent": {
+          "type": ["string", "null"],
+          "description": "Name of the level this one hangs off, or null for a root level."
+        }
+      }
+    }
+  }
+}

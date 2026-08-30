@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "vocabularies.resolve",
+  "description": "Existence, labels and (optionally) parentage for a batch of term codes at one level. This object validates the request payload; the response shape ({exists, labels, is_child}) is documented in $defs.Resolution. One call answers every question ref_select validation asks about a submitted value, because asking them one at a time would be three round trips per listing.",
+  "type": "object",
+  "required": ["vocabulary", "level", "codes"],
+  "properties": {
+    "vocabulary": { "type": "string", "maxLength": 64, "description": "Slug of the vocabulary." },
+    "level": { "type": "string", "maxLength": 64, "description": "Level the codes belong to." },
+    "codes": {
+      "type": "array",
+      "description": "Term codes to resolve. Duplicates are collapsed.",
+      "items": { "type": "string", "maxLength": 128 },
+      "maxItems": 200
+    },
+    "parent": {
+      "type": ["object", "null"],
+      "description": "When given, every code is also checked for being a child of this term (the ref_select parentFeature check). Omit it to ask about the whole level.",
+      "required": ["level", "code"],
+      "properties": {
+        "level": { "type": "string", "maxLength": 64 },
+        "code": { "type": "string", "maxLength": 128 }
+      },
+      "additionalProperties": false
+    },
+    "language": {
+      "type": ["string", "null"],
+      "description": "Language tag to prefer for labels (Term.labels[lang]); falls back to the term's own label.",
+      "maxLength": 16
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Resolution": {
+      "type": "object",
+      "description": "The response.",
+      "required": ["exists", "labels", "is_child"],
+      "properties": {
+        "exists": {
+          "type": "object",
+          "description": "{code: bool} — one entry per requested code, including the unknown ones.",
+          "additionalProperties": { "type": "boolean" }
+        },
+        "labels": {
+          "type": "object",
+          "description": "{code: label} — unknown codes are ABSENT rather than null, mirroring the projections read() convention; the caller falls back to the code, which is what format_value does.",
+          "additionalProperties": { "type": "string" }
+        },
+        "is_child": {
+          "type": ["object", "null"],
+          "description": "{code: bool} when a parent was named, null when it was not. 'no parent given' and 'no code is a child of it' are different answers and the caller must be able to tell them apart.",
+          "additionalProperties": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}
