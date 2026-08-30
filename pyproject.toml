@@ -1,0 +1,94 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stapel-vocabularies"
+version = "0.1.0"
+description = "Reference vocabularies (levels, terms, edges) behind stapel-attributes' ref_select types, for the Stapel framework"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+keywords = ["django", "stapel", "vocabulary", "taxonomy", "catalog"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: Django",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+dependencies = [
+    # RevisionMixin (the cache key of a whole vocabulary), the AppSettings
+    # config layer, the error registry, comm (Functions + the outbox emit) and
+    # ReadOnlyOrStaff. 0.30.0 is the floor for stapel_core.django.mounts,
+    # which checks.py W002 measures the deployment's URL surface with.
+    "stapel-core>=0.30.0,<1.0",
+    # The VocabularyResolver protocol this module implements lives in L1 and
+    # arrived in 0.5.0. This is a FLOOR, not a preference: on anything older
+    # AppConfig.ready() finds no register_vocabulary_resolver, no resolver is
+    # registered, and every ref_select feature in the deployment refuses to
+    # save with "no vocabulary resolver registered" while the term endpoints
+    # keep answering — the exact silent half-configuration checks.py W001
+    # exists to report.
+    "stapel-attributes>=0.5,<1.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/usestapel/stapel-vocabularies"
+Repository = "https://github.com/usestapel/stapel-vocabularies"
+Documentation = "https://github.com/usestapel/stapel-vocabularies#readme"
+Changelog = "https://github.com/usestapel/stapel-vocabularies/blob/main/CHANGELOG.md"
+Issues = "https://github.com/usestapel/stapel-vocabularies/issues"
+
+[project.optional-dependencies]
+# What the TEST SUITE needs, as opposed to what the package needs. jsonschema
+# validates converter output against the committed fixture schema; the loader
+# itself never imports it (a gate that only runs where an optional library
+# happens to be installed is not a gate).
+test = [
+    "pytest",
+    "pytest-django",
+    "pytest-cov",
+    "jsonschema>=4",
+    "stapel-tools>=0.9.1,<1",
+]
+
+[tool.setuptools]
+package-dir = {"stapel_vocabularies" = "."}
+packages = [
+    "stapel_vocabularies",
+    "stapel_vocabularies.migrations",
+    "stapel_vocabularies.management",
+    "stapel_vocabularies.management.commands",
+]
+
+[tool.setuptools.package-data]
+stapel_vocabularies = ["py.typed", "migrations/*.py", "schemas/**/*.json", "docs/capabilities.json", "docs/flows.json", "docs/errors.json", "docs/llms.txt", "docs/vocabulary-fixture.schema.json", "CONFIG.MD"]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+# Single source for the git hooks and CI (they pass the same flags on the CLI).
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+django_find_project = false
+addopts = "--tb=short -q --import-mode=importlib"
+markers = [
+    "slow: the phone-sized load budget (a few seconds, not milliseconds)",
+]
+
+[tool.coverage.run]
+omit = [
+    "*/tests/*",
+    "*/conftest.py",
+    "*/migrations/*",
+]

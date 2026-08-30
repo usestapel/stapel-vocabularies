@@ -1,0 +1,126 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install stapel-core (main)
+        run: pip install "stapel-core @ git+https://github.com/usestapel/stapel-core.git"
+
+      # The VocabularyResolver protocol this module implements lands in
+      # stapel-attributes 0.5.0. Installed from main here for the same reason
+      # core is: the test job exercises the pair as it is being built, and the
+      # release-track job below is the one that proves the declared pin
+      # resolves from PyPI.
+      - name: Install stapel-attributes (main)
+        run: pip install --no-deps "stapel-attributes @ git+https://github.com/usestapel/stapel-attributes.git"
+
+      - name: Install
+        run: pip install -e ".[test]" || pip install -e .
+
+      - name: Lint
+        run: |
+          pip install ruff --quiet
+          ruff check . --select E,F,W --ignore E501
+
+      - name: migration-lint (expand/contract gate, release-management.md §3)
+        run: |
+          pip install "stapel-tools>=0.9.1,<1" --quiet
+          stapel-migration-lint . --strict
+
+      - name: emit-check (outbox atomicity gate, incl. EMIT005)
+        run: python -m stapel_core.lint.emit_check .
+
+      - name: Import check
+        run: python -c "import stapel_vocabularies; print('import OK')"
+
+      - name: Install test dependencies
+        run: pip install pytest pytest-django pytest-cov "jsonschema>=4" "stapel-tools>=0.9.1,<1"
+
+      - name: Tests with coverage
+        run: |
+          pytest tests/ \
+            --cov=stapel_vocabularies \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --junitxml=junit.xml \
+            -o junit_family=legacy \
+            -v
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        with:
+          files: coverage.xml
+          flags: stapel-vocabularies
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Upload test results to Codecov
+        uses: codecov/test-results-action@v1
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  release-track:
+    # Release gate — library-standard §7.4. Installs the package the way an end
+    # user does: dependencies (incl. stapel-core and stapel-attributes)
+    # resolved from PyPI strictly by the declared pins — no git-main siblings,
+    # no editables. Catches "pin into the void" and drift between a sibling's
+    # branch and its published wheel.
+    #
+    # This job is RED until stapel-attributes 0.5.0 is on PyPI, and that is the
+    # gate working: `stapel-attributes>=0.5,<1.0` is a floor (below it no
+    # resolver registers and every ref_select feature refuses to save), so an
+    # end user installing this wheel today genuinely cannot get a working
+    # deployment. It goes green when S1 publishes, without a change here.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install as an end user (deps resolved from PyPI by pin)
+        run: pip install .
+      - name: Verify stapel-core resolved from PyPI satisfies the declared pin
+        # Reads the range straight out of pyproject.toml instead of a hardcoded
+        # tuple — the previous hardcoded `==(0,8)`/`==(0,10)` silently went stale
+        # (and failed every run) each time the pin was bumped, because nobody
+        # remembered to update this step in step with the dependency line.
+        run: |
+          cd "$RUNNER_TEMP" && python -c "
+          import importlib.metadata as m
+          import re
+          import tomllib
+          from pathlib import Path
+
+          pyproject = tomllib.loads(Path('$GITHUB_WORKSPACE/pyproject.toml').read_text())
+          dep = next(d for d in pyproject['project']['dependencies'] if d.startswith('stapel-core'))
+          floor_s, ceil_s = re.search(r'>=([\d.]+),<([\d.]+)', dep).groups()
+          floor = tuple(map(int, floor_s.split('.')))
+          ceil = tuple(map(int, ceil_s.split('.')))
+          v = m.version('stapel-core')
+          got = tuple(map(int, v.split('.')[:len(floor)]))
+          print(f'stapel-core {v} against {dep!r}')
+          assert floor <= got < ceil, f'{v} outside declared range {dep!r}'
+          "
+      - name: Import smoke (installed package, from a clean dir)
+        run: cd "$RUNNER_TEMP" && python -c "import stapel_vocabularies; print('release-track import OK')"
