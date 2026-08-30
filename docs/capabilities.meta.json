@@ -1,0 +1,138 @@
+{
+  "_comment": "Hand-curated layer of docs/capabilities.json (capability-config.md §2 p.3). The emitter (stapel_vocabularies/_capabilities.py) merges this over the derived axes. This module has ONE CTO-facing axis — whether this service answers vocabulary questions in-process or over the bus. Keep language business-facing; it surfaces in CTO conversations, not in code. The `surface` section (stapel_tools.surface) is what a product must CALL rather than re-implement: the loader, the two converters and the slugger, all of which a product otherwise writes badly against a 40 MB vendor XML. surface_roots select the symbols; every selected symbol MUST carry an intent line here or emission fails naming it.",
+  "maturity": "alpha",
+  "provides": "Reference vocabularies too large to inline into a category's feature schema — 14 962 phone models, 107 049 car modifications — stored as levels, terms and parent/child edges rather than as paths, so one 'black' is shared by every model that comes in black and can be translated once and faceted on. Ships the public typeahead and cascade reads a listing composer needs (ETag'd on a revision, anonymous, no cookie), the two VocabularyResolver implementations stapel-attributes' ref_select / ref_hierarchical_select types validate values through (in-process and over comm), a batched transactional loader for reviewed fixtures that spends one revision and one event per file, and Django-free converters that turn a vendor's nested XML or CSV catalogue into such a fixture without loading the document into memory.",
+  "requires": [
+    {
+      "module": "stapel-core",
+      "optional": false,
+      "reason": "RevisionMixin (the revision every cache key is derived from), the AppSettings config layer, the error registry, comm (two Functions plus the transactional vocabulary.changed emit) and the ReadOnlyOrStaff permission the public reads rest on"
+    },
+    {
+      "module": "stapel-attributes",
+      "optional": false,
+      "reason": "declares the VocabularyResolver protocol this module implements; without it ref_select features cannot be validated at all and stapel_vocabularies.W001 says so at boot"
+    },
+    {
+      "module": "stapel-categories",
+      "optional": true,
+      "reason": "the features that carry an optionsRef live there; this module never imports it and is never imported by it — the only coupling is the vocabulary slug written in a feature's config"
+    }
+  ],
+  "extension_points": [
+    {
+      "name": "REGISTER_RESOLVER",
+      "kind": "boolean_flag",
+      "summary": "Whether this service answers vocabulary questions from its own tables. On where the vocabularies live; off in a service that has none and resolves over the bus instead."
+    },
+    {
+      "name": "vocabularies.resolve",
+      "kind": "comm_function",
+      "summary": "Do these term codes exist, what are they called, and are they children of that term — the three questions validating a submitted ref_select value asks, answered in one round trip so a listing save does not cost three."
+    },
+    {
+      "name": "vocabularies.describe",
+      "kind": "comm_function",
+      "summary": "One vocabulary's level structure and its current revision. The revision is what lets a remote resolver cache the answer and know when a re-imported catalogue made it stale."
+    },
+    {
+      "name": "vocabulary.changed",
+      "kind": "comm_event",
+      "summary": "A catalogue was re-imported: everything cached by this vocabulary's revision is stale. Emitted once per loaded file, inside the load's transaction, so a load that rolled back never announces itself."
+    },
+    {
+      "name": "serializer_seams",
+      "kind": "class_override",
+      "summary": "Every read view declares its response serializer as a seam (SerializerSeamMixin) — subclass the view, override the attribute, remount the URL."
+    }
+  ],
+  "axes": {
+    "REGISTER_RESOLVER": {
+      "business_label": "Where vocabulary lookups are answered",
+      "summary": "Whether this service resolves reference-vocabulary values itself, from its own catalogue tables (the default), or asks another service over the message bus. Turn it off only in a deployment where the catalogues live elsewhere — a service that holds the terms and declines to answer about them will happily list them over HTTP while refusing to save any feature that uses them.",
+      "behavior": "true: AppConfig.ready() registers the in-process ORM resolver with stapel-attributes; false: nothing is registered and the host points STAPEL_ATTRIBUTES['VOCABULARY_RESOLVER'] at stapel_vocabularies.resolver.CommResolver."
+    }
+  },
+  "surface_roots": [
+    {
+      "select": "functions",
+      "path": "loader.py"
+    },
+    {
+      "select": "functions",
+      "path": "convert.py"
+    },
+    {
+      "select": "functions",
+      "path": "slug.py"
+    },
+    {
+      "select": "functions",
+      "path": "resolver.py"
+    }
+  ],
+  "surface": {
+    "load_fixture": {
+      "kind": "gate_function",
+      "intent": "Apply one vocabulary fixture: upsert its terms in batches, rebuild or extend its edges, spend exactly one revision and emit exactly one vocabulary.changed — all in one transaction. Every path that puts terms into the database goes through this. A loop over Term.objects.create() issues one revision per row, so a 15 000-term catalogue emits 15 000 invalidations and leaves every downstream cache thrashing for the length of the import; it is also not atomic, so a failure halfway leaves a vocabulary that is half of two catalogues.",
+      "instead_of": [
+        "stapel_vocabularies.models.Term.objects.create",
+        "stapel_vocabularies.models.TermEdge.objects.create"
+      ]
+    },
+    "load_files": {
+      "kind": "gate_function",
+      "intent": "load_fixture over a list of files, each in its own transaction — the callable behind `manage.py load_vocabulary`, for a data migration or a deployment script that would otherwise shell out to a management command."
+    },
+    "validate_fixture": {
+      "kind": "gate_function",
+      "intent": "Refuse a fixture that the loader would only fail on halfway through: an unknown level, a duplicate code, an edge to a term nobody declared. Reach for it when generating fixtures, so a converter bug is reported by the row it is in rather than as an IntegrityError 12 000 rows into a bulk insert."
+    },
+    "nested_xml_to_fixture": {
+      "kind": "factory",
+      "intent": "Turn a vendor catalogue of nested label-bearing elements (Vendor > Model > MemorySize > Color) into a byte-stable fixture, streaming — the document is walked with iterparse and every finished element is dropped, so a 40 MB catalogue costs no more memory than the terms it yields. ElementTree.parse() on the same file builds the whole tree first, which is where a laptop catalogue stops being an import and becomes an out-of-memory kill.",
+      "instead_of": [
+        "xml.etree.ElementTree.parse"
+      ]
+    },
+    "csv_to_fixture": {
+      "kind": "factory",
+      "intent": "The same fixture from a one-row-per-path CSV, one column per level. An empty cell truncates that row's path rather than inventing an empty-labelled term, which is how a catalogue says 'this model lists no colours'."
+    },
+    "build_fixture": {
+      "kind": "factory",
+      "intent": "Assemble a fixture from collected labels and label-pairs — the shared half of both converters, and the entry point for a third one (an importer with its own parser). It is what assigns the codes, so a converter that skips it and slugs labels itself loses the level-wide deduplication and the sort order that make the output byte-stable."
+    },
+    "dump_fixture": {
+      "kind": "factory",
+      "intent": "Serialize a fixture with one term and one edge per line. json.dumps(indent=2) spreads a 160 000-edge catalogue over a million lines and a bare dumps() puts it on one; neither is reviewable, and a fixture that cannot be diffed is not being reviewed as code."
+    },
+    "write_fixture": {
+      "kind": "factory",
+      "intent": "dump_fixture to a path, creating parents. The one writer, so every fixture in a repo has the same byte layout."
+    },
+    "slugify_term": {
+      "kind": "factory",
+      "intent": "A label to a term code: transliterated, lowercased, [a-z0-9-], at most 128 characters. Django's slugify drops Cyrillic entirely, so every Russian colour in a catalogue would collapse onto the empty string. The table here is frozen — a code ends up inside saved listings, so changing how one is derived renames data.",
+      "instead_of": [
+        "django.utils.text.slugify"
+      ]
+    },
+    "dedupe_codes": {
+      "kind": "factory",
+      "intent": "Assign every label in ONE level a unique code, numbering collisions in label sort order so the result depends on the level's contents rather than on the order a parser met them. The suffix is chosen against the codes already assigned, not a per-base counter: 'iPhone 10 2' owns iphone-10-2, and handing that code to 'iPhone-10' is a duplicate the real phone catalogue actually produces."
+    },
+    "dedupe_code_list": {
+      "kind": "factory",
+      "intent": "dedupe_codes applied positionally, keeping the caller's order — for a converter that already has its labels in the order it wants them out."
+    },
+    "transliterate": {
+      "kind": "factory",
+      "intent": "The Cyrillic-to-Latin step on its own, for a caller building an identifier that is not a term code. Reach for slugify_term instead unless you own the charset yourself."
+    },
+    "register_orm_resolver": {
+      "kind": "gate_function",
+      "intent": "Hand stapel-attributes the in-process resolver. Already called from AppConfig.ready() under the REGISTER_RESOLVER flag; call it directly only from a host that boots its apps unusually. Returns None where the installed stapel-attributes predates the protocol, which is the deployment stapel_vocabularies.W001 reports rather than crashing."
+    }
+  }
+}

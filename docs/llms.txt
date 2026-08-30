@@ -1,0 +1,118 @@
+# stapel-vocabularies 0.1.0
+
+Reference vocabularies too large to inline into a category's feature schema — 14 962 phone models, 107 049 car modifications — stored as levels, terms and parent/child edges rather than as paths, so one 'black' is shared by every model that comes in black and can be translated once and faceted on. Ships the public typeahead and cascade reads a listing composer needs (ETag'd on a revision, anonymous, no cookie), the two VocabularyResolver implementations stapel-attributes' ref_select / ref_hierarchical_select types validate values through (in-process and over comm), a batched transactional loader for reviewed fixtures that spends one revision and one event per file, and Django-free converters that turn a vendor's nested XML or CSV catalogue into such a fixture without loading the document into memory.
+
+Contract: axes 1 · surface 13 · extension points 5 · operations 4 · error codes 45.
+Generated from docs/capabilities.json by `stapel-llms-txt` — do not edit; drift-gated by `make contract-check`.
+
+## Configuration axes — what a product switches on
+Settings keys; `default` is what you get by saying nothing. Turning an axis off unmounts the operations it gates.
+- REGISTER_RESOLVER [bool, default true] — Where vocabulary lookups are answered
+  Whether this service resolves reference-vocabulary values itself, from its own catalogue tables (the default), or asks another service over the message bus. Turn it off only in a deployment where the catalogues live elsewhere — a service that holds the terms and declines to answer about them will happily list them over HTTP while refusing to save any feature that uses them.
+
+## Usage surface — call these before writing your own
+This is the answer to "does Stapel already have something for X?". `instead of` names the outside symbol this one displaces.
+### gate_function
+- load_files — stapel_vocabularies.loader.load_files
+  load_fixture over a list of files, each in its own transaction — the callable behind `manage.py load_vocabulary`, for a data migration or a deployment script that would otherwise shell out to a management command.
+- load_fixture — stapel_vocabularies.loader.load_fixture
+  instead of: stapel_vocabularies.models.Term.objects.create, stapel_vocabularies.models.TermEdge.objects.create
+  Apply one vocabulary fixture: upsert its terms in batches, rebuild or extend its edges, spend exactly one revision and emit exactly one vocabulary.changed — all in one transaction. Every path that puts terms into the database goes through this. A loop over Term.objects.create() issues one revision per row, so a 15 000-term catalogue emits 15 000 invalidations and leaves every downstream cache thrashing for the length of the import; it is also not atomic, so a failure halfway leaves a vocabulary that is half of two catalogues.
+- register_orm_resolver — stapel_vocabularies.resolver.register_orm_resolver
+  Hand stapel-attributes the in-process resolver. Already called from AppConfig.ready() under the REGISTER_RESOLVER flag; call it directly only from a host that boots its apps unusually. Returns None where the installed stapel-attributes predates the protocol, which is the deployment stapel_vocabularies.W001 reports rather than crashing.
+- validate_fixture — stapel_vocabularies.loader.validate_fixture
+  Refuse a fixture that the loader would only fail on halfway through: an unknown level, a duplicate code, an edge to a term nobody declared. Reach for it when generating fixtures, so a converter bug is reported by the row it is in rather than as an IntegrityError 12 000 rows into a bulk insert.
+### factory
+- build_fixture — stapel_vocabularies.convert.build_fixture
+  Assemble a fixture from collected labels and label-pairs — the shared half of both converters, and the entry point for a third one (an importer with its own parser). It is what assigns the codes, so a converter that skips it and slugs labels itself loses the level-wide deduplication and the sort order that make the output byte-stable.
+- csv_to_fixture — stapel_vocabularies.convert.csv_to_fixture
+  The same fixture from a one-row-per-path CSV, one column per level. An empty cell truncates that row's path rather than inventing an empty-labelled term, which is how a catalogue says 'this model lists no colours'.
+- dedupe_code_list — stapel_vocabularies.slug.dedupe_code_list
+  dedupe_codes applied positionally, keeping the caller's order — for a converter that already has its labels in the order it wants them out.
+- dedupe_codes — stapel_vocabularies.slug.dedupe_codes
+  Assign every label in ONE level a unique code, numbering collisions in label sort order so the result depends on the level's contents rather than on the order a parser met them. The suffix is chosen against the codes already assigned, not a per-base counter: 'iPhone 10 2' owns iphone-10-2, and handing that code to 'iPhone-10' is a duplicate the real phone catalogue actually produces.
+- dump_fixture — stapel_vocabularies.convert.dump_fixture
+  Serialize a fixture with one term and one edge per line. json.dumps(indent=2) spreads a 160 000-edge catalogue over a million lines and a bare dumps() puts it on one; neither is reviewable, and a fixture that cannot be diffed is not being reviewed as code.
+- nested_xml_to_fixture — stapel_vocabularies.convert.nested_xml_to_fixture
+  instead of: xml.etree.ElementTree.parse
+  Turn a vendor catalogue of nested label-bearing elements (Vendor > Model > MemorySize > Color) into a byte-stable fixture, streaming — the document is walked with iterparse and every finished element is dropped, so a 40 MB catalogue costs no more memory than the terms it yields. ElementTree.parse() on the same file builds the whole tree first, which is where a laptop catalogue stops being an import and becomes an out-of-memory kill.
+- slugify_term — stapel_vocabularies.slug.slugify_term
+  instead of: django.utils.text.slugify
+  A label to a term code: transliterated, lowercased, [a-z0-9-], at most 128 characters. Django's slugify drops Cyrillic entirely, so every Russian colour in a catalogue would collapse onto the empty string. The table here is frozen — a code ends up inside saved listings, so changing how one is derived renames data.
+- transliterate — stapel_vocabularies.slug.transliterate
+  The Cyrillic-to-Latin step on its own, for a caller building an identifier that is not a term code. Reach for slugify_term instead unless you own the charset yourself.
+- write_fixture — stapel_vocabularies.convert.write_fixture
+  dump_fixture to a path, creating parents. The one writer, so every fixture in a repo has the same byte layout.
+
+## Extension points — what a product replaces, fork-free
+- REGISTER_RESOLVER [boolean_flag]
+  Whether this service answers vocabulary questions from its own tables. On where the vocabularies live; off in a service that has none and resolves over the bus instead.
+- serializer_seams [class_override]
+  Every read view declares its response serializer as a seam (SerializerSeamMixin) — subclass the view, override the attribute, remount the URL.
+- vocabularies.describe [comm_function]
+  One vocabulary's level structure and its current revision. The revision is what lets a remote resolver cache the answer and know when a re-imported catalogue made it stale.
+- vocabularies.resolve [comm_function]
+  Do these term codes exist, what are they called, and are they children of that term — the three questions validating a submitted ref_select value asks, answered in one round trip so a listing save does not cost three.
+- vocabulary.changed [comm_event]
+  A catalogue was re-imported: everything cached by this vocabulary's revision is stale. Emitted once per loaded file, inside the load's transaction, so a load that rolled back never announces itself.
+
+## Fits with — fleet dependencies
+- stapel-attributes (required) — declares the VocabularyResolver protocol this module implements; without it ref_select features cannot be validated at all and stapel_vocabularies.W001 says so at boot
+- stapel-categories (optional) — the features that carry an optionsRef live there; this module never imports it and is never imported by it — the only coupling is the vocabulary slug written in a feature's config
+- stapel-core (required) — RevisionMixin (the revision every cache key is derived from), the AppSettings config layer, the error registry, comm (two Functions plus the transactional vocabulary.changed emit) and the ReadOnlyOrStaff permission the public reads rest on
+
+## HTTP operations (4) — call by operationId, never by a typed path
+Paths are relative to `/vocabularies/api/v1/vocabularies/`.
+### vocabularies
+- GET / — vocabularies_api_v1_vocabularies_list
+- GET /{slug}/ — vocabularies_api_v1_vocabularies_retrieve
+- GET /{slug}/terms/resolve/ — vocabularies_api_v1_vocabularies_terms_resolve_retrieve
+- GET /{slug}/terms/ — vocabularies_api_v1_vocabularies_terms_retrieve
+
+## Error codes (45) — the StapelError envelope
+Render `t(code, params)`; branch UX on the remediation. Localized text lives in docs/errors.<lang>.md, not here.
+- error.400.bad_request [400] fix_input
+- error.400.captcha_invalid [400] retry
+- error.400.captcha_required [400] retry
+- error.400.expected_list [400] fix_input
+- error.400.field.blank [400] fix_input {field}
+- error.400.field.does_not_exist [400] fix_input {field}
+- error.400.field.invalid [400] fix_input {field}
+- error.400.field.invalid_choice [400] fix_input {field}
+- error.400.field.max_length [400] fix_input {field,max_length}
+- error.400.field.max_value [400] fix_input {field,max_value}
+- error.400.field.min_length [400] fix_input {field,min_length}
+- error.400.field.min_value [400] fix_input {field,min_value}
+- error.400.field.null [400] fix_input {field}
+- error.400.field.required [400] fix_input {field}
+- error.400.field.unique [400] fix_input {field}
+- error.400.invalid_ad_id [400] fix_input
+- error.400.validation_error [400] fix_input
+- error.400.verification_failed [400] verify
+- error.400.verification_invalid_factor [400] verify
+- error.400.vocabularies_bad_parent [400] fix_input {parent,level}
+- error.401.unauthorized [401] reauthenticate
+- error.402.payment_required [402] retry
+- error.403.forbidden [403] retry
+- error.403.network_blocked [403] contact_support
+- error.403.verification_enrollment_required [403] verify
+- error.403.verification_required [403] verify
+- error.404.ad_not_found [404] retry
+- error.404.not_found [404] retry
+- error.404.verification_challenge_not_found [404] verify
+- error.404.vocabularies_level_not_found [404] retry {vocabulary,level}
+- error.404.vocabularies_vocabulary_not_found [404] retry
+- error.405.method_not_allowed [405] retry
+- error.406.not_acceptable [406] retry
+- error.408.request_timeout [408] retry
+- error.409.conflict [409] fix_input
+- error.410.gone [410] retry
+- error.413.payload_too_large [413] retry
+- error.415.unsupported_media_type [415] retry
+- error.422.unprocessable_entity [422] wait_and_retry
+- error.423.locked [423] wait_and_retry
+- error.423.verification_locked [423] wait_and_retry
+- error.429.rate_limit [429] wait_and_retry {retry_after_minutes}
+- error.429.too_many_requests [429] wait_and_retry
+- error.500.internal [500] contact_support
+- error.503.mandate_unavailable [503] retry
