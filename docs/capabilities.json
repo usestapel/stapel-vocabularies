@@ -1,6 +1,6 @@
 {
   "module": "stapel-vocabularies",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "provides": "Reference vocabularies too large to inline into a category's feature schema — 14 962 phone models, 107 049 car modifications — stored as levels, terms and parent/child edges rather than as paths, so one 'black' is shared by every model that comes in black and can be translated once and faceted on. Ships the public typeahead and cascade reads a listing composer needs (ETag'd on a revision, anonymous, no cookie), the two VocabularyResolver implementations stapel-attributes' ref_select / ref_hierarchical_select types validate values through (in-process and over comm), a batched transactional loader for reviewed fixtures that spends one revision and one event per file, and Django-free converters that turn a vendor's nested XML or CSV catalogue into such a fixture without loading the document into memory.",
   "axes": [
     {
@@ -90,7 +90,7 @@
       "name": "load_fixture",
       "kind": "gate_function",
       "path": "stapel_vocabularies.loader.load_fixture",
-      "intent": "Apply one vocabulary fixture: upsert its terms in batches, rebuild or extend its edges, spend exactly one revision and emit exactly one vocabulary.changed — all in one transaction. Every path that puts terms into the database goes through this. A loop over Term.objects.create() issues one revision per row, so a 15 000-term catalogue emits 15 000 invalidations and leaves every downstream cache thrashing for the length of the import; it is also not atomic, so a failure halfway leaves a vocabulary that is half of two catalogues.",
+      "intent": "Apply one vocabulary fixture: upsert its terms in batches, rebuild or extend its edges, spend exactly one revision and emit exactly one vocabulary.changed — all in one transaction. Every path that puts terms into the database goes through this. A loop over Term.objects.create() issues one revision per row, so a 15 000-term catalogue emits 15 000 invalidations and leaves every downstream cache thrashing for the length of the import; it is also not atomic, so a failure halfway leaves a vocabulary that is half of two catalogues. Terms are matched on (level, external_id) before (level, code), so a source catalogue relabelling a term moves that term's code in place instead of duplicating or re-inserting the row.",
       "instead_of": [
         "stapel_vocabularies.models.Term.objects.create",
         "stapel_vocabularies.models.TermEdge.objects.create"

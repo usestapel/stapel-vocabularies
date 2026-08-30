@@ -146,8 +146,22 @@ for a NEW vocabulary the `create()` is that increment and the closing
 `save(update_fields=...)` deliberately omits `"revision"`; for an existing one
 the closing save is the increment.
 
-- Terms are upserted on `(vocabulary, level, code)` — `bulk_create` for the
+- Terms are upserted on **source identity first**: `(level, external_id)` when
+  the fixture row carries one, `(level, code)` otherwise. `bulk_create` for the
   new, `bulk_update` for the changed, nothing touched for the identical.
+  The code is a slug of the *label*, so a source catalogue relabelling a term
+  moves its code while the term stays the same term — keyed on the code, a
+  re-import reads that as a new term plus a stale one (additively a duplicate
+  value; under `--replace` the row is deleted, taking its id and its edges,
+  and a fresh one inserted). Keyed on the source id it is one term whose code
+  moved, and stored listing values keep pointing at a live row.
+- Because a code can move, the stale delete under `--replace` runs **before**
+  the writes (a rename may be taking a dropped term's code), and a chain or a
+  swap of codes is parked on `__reimport-<id>` for one statement rather than
+  breaking `unique (vocabulary, level, code)` mid-`bulk_update`. What cannot
+  be arranged is named, not left to an `IntegrityError`: an additive load whose
+  rename needs a code the file does not declare, two live terms carrying one
+  `external_id`, and one file giving one term two rows.
 - `--replace` makes the file authoritative: the vocabulary's whole edge set is
   rebuilt and terms the file does not mention are deleted. Without it the load
   is additive, which is what a second catalogue contributing to one vocabulary

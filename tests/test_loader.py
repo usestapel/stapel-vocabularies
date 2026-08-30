@@ -195,3 +195,163 @@ def test_the_management_command_reports_a_bad_fixture_as_a_command_error(tmp_pat
 def test_the_management_command_reports_a_missing_file(tmp_path):
     with pytest.raises(CommandError):
         call_command("load_vocabulary", str(tmp_path / "nope.json"))
+
+
+# ---------------------------------------------------------------------------
+# Source identity: a re-import keys on external_id, not on the code
+# ---------------------------------------------------------------------------
+#
+# The code is a transliterated slug of the LABEL, so a source catalogue
+# relabelling a term moves its code while the term stays the same term. Keyed
+# on the code that reads as "a new term, and a stale one": additively it
+# duplicates the value, and under --replace it deletes the row — taking its id
+# and its edges — and inserts a fresh one.
+
+
+def test_a_relabelled_term_keeps_its_row_when_it_carries_an_external_id():
+    load_fixture(fixture())
+    term_id = Term.objects.get(code="iphone-10").id
+    edge_ids = set(TermEdge.objects.values_list("id", flat=True))
+
+    moved = fixture()
+    moved["terms"][2] = ["Model", "iphone-x", "iPhone X", "10"]
+    moved["edges"][0] = ["Vendor", "apple", "Model", "iphone-x"]
+    result = load_fixture(moved)
+
+    assert result.terms_created == 0
+    assert result.terms_updated == 1
+    assert Term.objects.filter(level="Model", external_id="10").count() == 1
+    term = Term.objects.get(id=term_id)          # the SAME row
+    assert (term.code, term.label) == ("iphone-x", "iPhone X")
+    assert not Term.objects.filter(code="iphone-10").exists()
+    # Its edge was neither dropped nor rebuilt (additive load).
+    assert set(TermEdge.objects.values_list("id", flat=True)) == edge_ids
+
+
+def test_a_relabelled_term_under_replace_keeps_its_id():
+    load_fixture(fixture())
+    term_id = Term.objects.get(code="iphone-10").id
+    moved = fixture()
+    moved["terms"][2] = ["Model", "iphone-x", "iPhone X", "10"]
+    moved["edges"][0] = ["Vendor", "apple", "Model", "iphone-x"]
+
+    result = load_fixture(moved, replace=True)
+
+    assert result.terms_deleted == 0             # nothing went stale
+    assert Term.objects.get(id=term_id).code == "iphone-x"
+    assert Term.objects.count() == 4
+
+
+def test_a_term_without_an_external_id_still_matches_on_its_code():
+    load_fixture(fixture())
+    term_id = Term.objects.get(code="apple").id
+    edited = fixture()
+    edited["terms"][0] = ["Vendor", "apple", "Apple Inc.", None]
+    result = load_fixture(edited)
+    assert result.terms_updated == 1
+    assert Term.objects.get(id=term_id).label == "Apple Inc."
+    assert Term.objects.count() == 4
+
+
+def test_a_relabel_without_an_external_id_is_still_a_new_term():
+    """No source id, no identity — the code is all the term has."""
+    load_fixture(fixture())
+    moved = fixture()
+    moved["terms"][0] = ["Vendor", "apple-inc", "Apple Inc.", None]
+    moved["edges"][0] = ["Vendor", "apple-inc", "Model", "iphone-10"]
+    load_fixture(moved, replace=True)
+    assert not Term.objects.filter(code="apple").exists()
+    assert Term.objects.filter(code="apple-inc").exists()
+
+
+def test_two_terms_swapping_codes_do_not_break_the_unique_constraint():
+    """A→B while B→A: parked on temporary codes, then written."""
+    swap = fixture()
+    swap["terms"] = [
+        ["Vendor", "alpha", "Alpha", "1"],
+        ["Vendor", "beta", "Beta", "2"],
+    ]
+    swap["edges"] = []
+    load_fixture(swap)
+    ids = dict(Term.objects.values_list("external_id", "id"))
+
+    swapped = fixture()
+    swapped["terms"] = [
+        ["Vendor", "beta", "Beta", "1"],
+        ["Vendor", "alpha", "Alpha", "2"],
+    ]
+    swapped["edges"] = []
+    load_fixture(swapped, replace=True)
+
+    assert Term.objects.get(id=ids["1"]).code == "beta"
+    assert Term.objects.get(id=ids["2"]).code == "alpha"
+    assert Term.objects.count() == 2
+
+
+def test_a_rename_onto_a_dropped_terms_code_lands_under_replace():
+    load_fixture(fixture())
+    moved = fixture()
+    # "galaxy-s10" is dropped from the file; iphone-10 (external_id 10) moves
+    # onto its code. The stale delete must run before the rename.
+    moved["terms"] = [
+        ["Vendor", "apple", "Apple", None],
+        ["Vendor", "samsung", "Samsung", None],
+        ["Model", "galaxy-s10", "Galaxy S10 (was iPhone)", "10"],
+    ]
+    moved["edges"] = [["Vendor", "apple", "Model", "galaxy-s10"]]
+    result = load_fixture(moved, replace=True)
+    assert result.terms_deleted == 1
+    assert Term.objects.get(level="Model").external_id == "10"
+    assert Term.objects.get(level="Model").code == "galaxy-s10"
+
+
+def test_a_rename_blocked_by_an_undeclared_term_is_named_not_an_integrity_error():
+    load_fixture(fixture())
+    moved = fixture()
+    moved["terms"] = [["Model", "galaxy-s10", "Galaxy S10 (was iPhone)", "10"]]
+    moved["edges"] = []
+    with pytest.raises(FixtureError) as exc:
+        load_fixture(moved)                      # additive: nothing is dropped
+    assert "galaxy-s10" in str(exc.value)
+    assert "--replace" in str(exc.value)
+    assert Term.objects.get(code="iphone-10").label == "iPhone 10"
+
+
+def test_two_live_terms_carrying_one_external_id_are_refused():
+    load_fixture(fixture())
+    Term.objects.filter(code="galaxy-s10").update(external_id="10")
+    with pytest.raises(FixtureError) as exc:
+        load_fixture(fixture())
+    assert "external_id" in str(exc.value)
+    assert "merge or clear" in str(exc.value)
+
+
+def test_one_file_may_not_give_one_term_two_rows():
+    load_fixture(fixture())
+    doubled = fixture()
+    doubled["terms"].append(["Model", "iphone-ten", "iPhone Ten", "10"])
+    doubled["edges"] = []
+    with pytest.raises(FixtureError) as exc:
+        load_fixture(doubled)
+    assert "one live term" in str(exc.value)
+
+
+def test_a_code_match_belonging_to_another_source_node_is_not_hijacked():
+    """Fixture id X on a code held by a term already carrying id Y."""
+    load_fixture(fixture())
+    other = fixture()
+    other["terms"] = [["Model", "iphone-10", "Something else", "999"]]
+    other["edges"] = []
+    with pytest.raises(FixtureError):
+        load_fixture(other)                      # additive: the code is held
+    assert Term.objects.get(code="iphone-10").external_id == "10"
+
+
+def test_the_rename_is_idempotent_on_a_second_load():
+    load_fixture(fixture())
+    moved = fixture()
+    moved["terms"][2] = ["Model", "iphone-x", "iPhone X", "10"]
+    moved["edges"][0] = ["Vendor", "apple", "Model", "iphone-x"]
+    load_fixture(moved)
+    result = load_fixture(moved)
+    assert (result.terms_created, result.terms_updated) == (0, 0)

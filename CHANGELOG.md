@@ -4,6 +4,41 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
+## [0.1.1] — 2026-08-31
+
+### Fixed
+
+- **A re-imported vocabulary keys on source identity, not on the code.**
+  `load_fixture` now matches a fixture row against the live term with the same
+  `(level, external_id)` first, and falls back to `(level, code)` only for
+  rows carrying no source id.
+
+  The code is a transliterated slug of the **label**, so a source catalogue
+  relabelling a term moves its code while the term stays the same term. Keyed
+  on the code, a re-import read that as a new term plus a stale one: an
+  additive load duplicated the value, and `--replace` deleted the row —
+  taking its id and its edges — and inserted a fresh one, so every listing
+  holding the old code pointed at nothing. Keyed on the source id it is one
+  term whose code moved.
+
+  Three consequences, each of them the point rather than a side effect:
+
+  - Under `--replace` the stale delete now runs **before** the term writes: a
+    rename may be moving onto a code a dropped term still holds, and
+    `unique (vocabulary, level, code)` would refuse it.
+  - A chain (`a→b` while `b→c`) or a swap of codes is parked on
+    `__reimport-<id>` for one statement, so it never breaks the unique
+    constraint mid-`bulk_update`.
+  - What cannot be arranged is named instead of surfacing as an
+    `IntegrityError` that identifies neither row — the loader's existing house
+    rule: an additive load whose write needs a code the file does not declare,
+    two live terms carrying one `external_id` in a level, and one file
+    resolving two rows onto one term.
+
+  `bulk_update` now writes `code` alongside `label`, `external_id` and `sort`.
+  No schema change, no migration: `Term.external_id` already existed and the
+  `(vocabulary, level, code)` constraint is untouched.
+
 ## [0.1.0] — 2026-08-30
 
 First release. Slice S2 of the attributes-v2 wave (spec §3.3, §3.6): the

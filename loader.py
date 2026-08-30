@@ -6,10 +6,15 @@ four terms or forty thousand. A per-term save would emit forty thousand
 invalidations and issue forty thousand revisions, and every consumer's cache
 would spend the import thrashing.
 
-Terms are upserted on ``(vocabulary, level, code)`` in batches; edges are
-inserted as a set difference (``--replace`` clears the vocabulary's edges
-first). Nothing here is Django-management-command-shaped so the same function
-can be called from a data migration or a test.
+Terms are upserted on **source identity first** — ``(level, external_id)``
+when the fixture row carries one, ``(level, code)`` otherwise — in batches;
+edges are inserted as a set difference (``--replace`` clears the vocabulary's
+edges first). The code is a transliterated slug of the *label*, so a source
+catalogue relabelling a term moves the code while the term stays the same
+term: keyed on the code a re-import would duplicate it (additive) or delete
+and re-insert it (``--replace``), and stored listing values would point at a
+row that no longer exists. Nothing here is Django-management-command-shaped so
+the same function can be called from a data migration or a test.
 """
 from __future__ import annotations
 
@@ -114,6 +119,67 @@ def _term_rows(fixture) -> List[Tuple[str, str, str, str, int]]:
     return rows
 
 
+def _match_terms(rows, existing) -> Dict[Tuple[str, str], dict]:
+    """Map each fixture row's ``(level, code)`` to the live term it IS.
+
+    Identity precedence, the same rule the category loader uses:
+
+    1. ``(level, external_id)`` when the row carries a source id — the term is
+       updated in place, **code included**.
+    2. ``(level, code)`` otherwise.
+
+    The code is a transliterated slug of the *label* (``slug.py``), so a source
+    catalogue relabelling a term moves its code while the term stays the same
+    term. Keyed on the code, a re-import reads that as a new term plus a stale
+    one: additively it duplicates the value, and under ``--replace`` it deletes
+    the row (taking its edges and its id) and inserts a fresh one. Keyed on the
+    source id it is one term whose code moved.
+    """
+    by_code: Dict[Tuple[str, str], dict] = {}
+    by_ext: Dict[Tuple[str, str], dict] = {}
+    for row in existing:
+        by_code[(row["level"], row["code"])] = row
+        if row["external_id"]:
+            key = (row["level"], row["external_id"])
+            if key in by_ext:
+                raise FixtureError(
+                    f"two live terms in level {row['level']!r} carry external_id "
+                    f"{row['external_id']!r} ({by_ext[key]['code']!r}, "
+                    f"{row['code']!r}) — merge or clear them before re-importing"
+                )
+            by_ext[key] = row
+
+    matched: Dict[Tuple[str, str], dict] = {}
+    claimed: Dict[int, Tuple[str, str]] = {}
+    for level, code, label, external_id, _sort in rows:
+        current = by_ext.get((level, external_id)) if external_id else None
+        if current is None:
+            current = by_code.get((level, code))
+            # A code match whose term belongs to a DIFFERENT source id is left
+            # alone: the file is not talking about that term. It falls through
+            # as a create, and the unique constraint is freed by the stale
+            # delete (--replace) or reported by the additive guard below.
+            if (
+                current is not None
+                and external_id
+                and current["external_id"]
+                and current["external_id"] != external_id
+            ):
+                current = None
+        if current is None:
+            continue
+        if current["id"] in claimed:
+            other = claimed[current["id"]]
+            raise FixtureError(
+                f"terms {other[0]}:{other[1]} and {level}:{code} both resolve to "
+                f"one live term ({current['code']!r}) — the file gives one term "
+                "two rows"
+            )
+        claimed[current["id"]] = (level, code)
+        matched[(level, code)] = current
+    return matched
+
+
 @transaction.atomic
 def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = None) -> LoadResult:
     """Apply one parsed fixture. One transaction, one revision, one event.
@@ -144,20 +210,18 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
         vocabulary.source = fixture.get("source", "") or ""
 
     rows = _term_rows(fixture)
-    existing: Dict[Tuple[str, str], dict] = {
-        (row["level"], row["code"]): row
-        for row in Term.objects.filter(vocabulary=vocabulary).values(
+    existing = list(
+        Term.objects.filter(vocabulary=vocabulary).values(
             "id", "level", "code", "label", "external_id", "sort"
         )
-    }
+    )
+    matched = _match_terms(rows, existing)
 
     to_create: List[Term] = []
     to_update: List[Term] = []
-    seen: set = set()
+    renamed: List[Term] = []
     for level, code, label, external_id, sort in rows:
-        key = (level, code)
-        seen.add(key)
-        current = existing.get(key)
+        current = matched.get((level, code))
         if current is None:
             to_create.append(
                 Term(
@@ -169,29 +233,28 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
                     sort=sort,
                 )
             )
-        elif (
-            current["label"] != label
+            continue
+        if (
+            current["code"] != code
+            or current["label"] != label
             or current["external_id"] != external_id
             or current["sort"] != sort
         ):
-            to_update.append(
-                Term(
-                    id=current["id"],
-                    vocabulary=vocabulary,
-                    level=level,
-                    code=code,
-                    label=label,
-                    external_id=external_id,
-                    sort=sort,
-                )
+            term = Term(
+                id=current["id"],
+                vocabulary=vocabulary,
+                level=level,
+                code=code,
+                label=label,
+                external_id=external_id,
+                sort=sort,
             )
+            to_update.append(term)
+            if current["code"] != code:
+                renamed.append(term)
 
-    if to_create:
-        Term.objects.bulk_create(to_create, batch_size=batch)
-    if to_update:
-        Term.objects.bulk_update(
-            to_update, ["label", "external_id", "sort"], batch_size=batch
-        )
+    claimed = {row["id"] for row in matched.values()}
+    stale = [row["id"] for row in existing if row["id"] not in claimed]
 
     terms_deleted = 0
     edges_deleted = 0
@@ -208,7 +271,9 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
         )
         present: set = set()
 
-        stale = [row["id"] for key, row in existing.items() if key not in seen]
+        # Stale terms go BEFORE the writes below, not after: a renamed term
+        # may be moving onto a code a dropped term still holds, and
+        # (vocabulary, level, code) is unique. Deleting first frees it.
         for start in range(0, len(stale), batch):
             _, per_model = Term.objects.filter(
                 id__in=stale[start:start + batch]
@@ -220,6 +285,39 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
                 "parent_id", "child_id"
             )
         )
+        # Additive load: nothing is deleted, so a term the file does not
+        # declare still holds its code, and a write moving onto that code
+        # cannot land. Said here rather than left to the IntegrityError, which
+        # would name neither term (the loader's existing house rule).
+        stale_ids = set(stale)
+        held = {
+            (row["level"], row["code"])
+            for row in existing if row["id"] in stale_ids
+        }
+        for term in renamed + to_create:
+            if (term.level, term.code) in held:
+                raise FixtureError(
+                    f"term {term.level}:{term.code} would take a code still held "
+                    "by a term this file does not declare (external_id "
+                    f"{term.external_id!r}) — re-run with --replace, or drop "
+                    "that term first"
+                )
+
+    if renamed:
+        # A rename chain (a→b while b→c) or a swap would break the unique
+        # constraint mid-statement, so park every moving term on a code
+        # nothing else can hold, then write the final ones.
+        Term.objects.bulk_update(
+            [Term(id=t.id, code=f"__reimport-{t.id}") for t in renamed],
+            ["code"], batch_size=batch,
+        )
+
+    if to_update:
+        Term.objects.bulk_update(
+            to_update, ["code", "label", "external_id", "sort"], batch_size=batch
+        )
+    if to_create:
+        Term.objects.bulk_create(to_create, batch_size=batch)
 
     ids: Dict[Tuple[str, str], int] = {
         (level, code): pk
