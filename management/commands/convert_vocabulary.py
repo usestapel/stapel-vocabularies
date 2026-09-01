@@ -1,7 +1,7 @@
 """``manage.py convert_vocabulary <input> --slug S --out F`` (spec §3.3).
 
 A thin wrapper over the Django-free converters in ``convert.py`` — the same
-functions the Avito importer calls directly. It exists so an operator holding
+functions a catalogue importer calls directly. It exists so an operator holding
 a vendor catalogue and a Django project does not need a second toolchain to
 turn one into a reviewable fixture.
 """

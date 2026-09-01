@@ -4,6 +4,24 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
+## [0.1.2] — 2026-09-01
+
+Patch. Documentation and example data only — no model, migration, API,
+converter or fixture-format change.
+
+### Changed
+
+- **Docs and examples are source-neutral.** README, MODULE.md, the fixture
+  schema description, `convert_vocabulary`'s docstring and the `functions.py`
+  comm examples named the external marketplace whose phone catalogue was the
+  worked example. The worked example is now a generic `phone-models`
+  vocabulary; the measurements it quotes (56 921 paths / 15 844 terms /
+  39 749 edges) are unchanged, because they are what makes the terms-and-edges
+  argument. `tests/test_convert.py` uses the same slug.
+- Code assignment stays as it was, transliteration included: `Color=chernyy`
+  is this module's own deterministic slug of a Cyrillic label, and the tests
+  that pin it are the transliteration contract, not imported data.
+
 ## [0.1.1] — 2026-08-31
 
 ### Fixed
@@ -58,7 +76,7 @@ reference-vocabulary store behind stapel-attributes' `ref_select` and
   that makes the level graph acyclic by construction rather than by a cycle
   detector.
 
-  Terms and edges, not paths: the Avito phone catalogue is 56 921 distinct
+  Terms and edges, not paths: a real phone catalogue is 56 921 distinct
   root-to-leaf paths and 15 844 distinct terms, so one `Color=chernyy` is
   shared by every model that comes in black.
 

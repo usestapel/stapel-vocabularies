@@ -29,7 +29,7 @@ argument — a level can only point backwards, so no chain of parents can return
 to where it started. `validate_levels()` in `models.py` is the only place it
 lives; `Vocabulary.clean()` and the loader both call it.
 
-**Levels + terms + edges, not paths.** The Avito phone catalogue is 56 921
+**Levels + terms + edges, not paths.** A real phone catalogue is 56 921
 distinct root-to-leaf paths and 15 844 distinct terms. Storing terms and edges
 is what makes `Color=chernyy` one row shared by every model that comes in
 black — 17 colours to translate rather than 56 921 path nodes, and a facet on
@@ -46,9 +46,9 @@ carry it. A load bumps it exactly once per file.
   nor its models, and is not imported by them.
 - **Fetching catalogues.** `Vocabulary.source` is provenance, not a
   downloader. Nothing here makes a network call.
-- **The Avito-specific parsing.** `convert.py` reads two generic shapes;
-  anything vendor-specific (the `Autocatalog` modification attributes) lives
-  in the importer, `stapel_tools.avito_import`.
+- **Vendor-specific parsing.** `convert.py` reads two generic shapes;
+  anything shaped like one particular vendor's export (its modification
+  attributes, say) lives in the catalogue importer in stapel-tools.
 - **Writes over HTTP.** The read surface has no writer. Loading is
   `manage.py load_vocabulary`, an operator action against a reviewed file.
 
@@ -176,7 +176,7 @@ in `tests/test_performance.py` loads in ~3 s against the 60 s budget.
 
 ## 7. Converters and codes
 
-`convert.py` is **Django-free** — the importer (`stapel_tools.avito_import`)
+`convert.py` is **Django-free** — the catalogue importer in stapel-tools
 calls it directly.
 
 - `nested_xml_to_fixture` drives `iterparse` and removes every finished

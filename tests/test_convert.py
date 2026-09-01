@@ -71,7 +71,7 @@ def validate(fixture):
 
 
 def test_nested_xml_detects_the_levels_in_document_order(phones_xml):
-    fixture = validate(nested_xml_to_fixture(phones_xml, "avito-phones"))
+    fixture = validate(nested_xml_to_fixture(phones_xml, "phone-models"))
     assert fixture["levels"] == [
         {"name": "Vendor"},
         {"name": "Model", "parent": "Vendor"},
@@ -82,7 +82,7 @@ def test_nested_xml_detects_the_levels_in_document_order(phones_xml):
 
 def test_a_term_is_shared_by_every_path_that_reaches_it(phones_xml):
     """The point of the DAG (D6): one 'чёрный', not one per path."""
-    fixture = nested_xml_to_fixture(phones_xml, "avito-phones")
+    fixture = nested_xml_to_fixture(phones_xml, "phone-models")
     colors = [row for row in fixture["terms"] if row[0] == "Color"]
     assert [row[1] for row in colors] == ["belyy", "chernyy"]
     # ...reached from two distinct memory sizes, though the document spells
@@ -99,7 +99,7 @@ def test_a_term_is_shared_by_every_path_that_reaches_it(phones_xml):
 
 
 def test_terms_are_sorted_by_level_then_code_and_edges_by_tuple(phones_xml):
-    fixture = nested_xml_to_fixture(phones_xml, "avito-phones")
+    fixture = nested_xml_to_fixture(phones_xml, "phone-models")
     order = [level["name"] for level in fixture["levels"]]
     keys = [(order.index(row[0]), row[1]) for row in fixture["terms"]]
     assert keys == sorted(keys)
@@ -107,8 +107,8 @@ def test_terms_are_sorted_by_level_then_code_and_edges_by_tuple(phones_xml):
 
 
 def test_conversion_is_byte_stable(phones_xml):
-    once = dump_fixture(nested_xml_to_fixture(phones_xml, "avito-phones"))
-    twice = dump_fixture(nested_xml_to_fixture(phones_xml, "avito-phones"))
+    once = dump_fixture(nested_xml_to_fixture(phones_xml, "phone-models"))
+    twice = dump_fixture(nested_xml_to_fixture(phones_xml, "phone-models"))
     assert once == twice
 
 
@@ -228,7 +228,7 @@ def test_csv_needs_at_least_one_column(tmp_path):
 
 
 def test_the_written_file_is_json_one_row_per_line(tmp_path, phones_xml):
-    fixture = nested_xml_to_fixture(phones_xml, "avito-phones")
+    fixture = nested_xml_to_fixture(phones_xml, "phone-models")
     path = write_fixture(fixture, tmp_path / "out" / "phones.json")
     text = path.read_text(encoding="utf-8")
     assert json.loads(text) == fixture

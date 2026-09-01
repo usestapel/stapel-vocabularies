@@ -24,7 +24,7 @@ pip install stapel-vocabularies
 
 | Fact | Value |
 |---|---|
-| Version | `0.1.1` |
+| Version | `0.1.2` |
 | Python | `>=3.11` (3.11, 3.12, 3.13, 3.14) |
 | HTTP operations | 4 |
 | Config axes | 1 |
@@ -47,7 +47,7 @@ every form render, and it would be megabytes.
 **stapel-vocabularies** is where they live instead.
 
 - **Levels, terms and edges — not paths.** `Vendor → Model → MemorySize →
-  Color` is 56 921 distinct paths in the Avito phone catalogue and only
+  Color` is 56 921 distinct paths in a real phone catalogue and only
   15 844 distinct terms. Storing the terms and the parent/child edges between
   them means one `Color=chernyy` shared by every model that comes in black:
   17 colours to translate instead of 56 921 path nodes, and a facet on a
@@ -68,7 +68,7 @@ every form render, and it would be megabytes.
 - **Loading is data plumbing, not an admin screen.** `manage.py
   load_vocabulary phones.json` is one transaction, one revision increment and
   one `vocabulary.changed` event for the whole file, whatever its size. The
-  real Avito phone catalogue — 15 844 terms, 39 749 edges — loads in ~1.2 s.
+  real phone catalogue — 15 844 terms, 39 749 edges — loads in ~1.2 s.
 - **Converters that do not read the file into memory.** A vendor's nested XML
   or a one-path-per-row CSV becomes a reviewable fixture, streamed through
   `iterparse`, with codes assigned deterministically (Cyrillic transliterated,
@@ -94,14 +94,14 @@ path("vocabularies/", include("stapel_vocabularies.urls"))   # -> /vocabularies/
 
 ```bash
 python manage.py convert_vocabulary phone_catalog.xml \
-    --slug avito-phones --name "Phones (Avito)" --out fixtures/avito-phones.json
-python manage.py load_vocabulary fixtures/avito-phones.json --replace
+    --slug phone-models --name "Phone models" --out fixtures/phone-models.json
+python manage.py load_vocabulary fixtures/phone-models.json --replace
 ```
 
 A feature then points at it instead of carrying options:
 
 ```json
-{"type": "ref_select", "optionsRef": {"vocabulary": "avito-phones",
+{"type": "ref_select", "optionsRef": {"vocabulary": "phone-models",
                                       "level": "Model",
                                       "parentFeature": "vendor"}}
 ```
@@ -124,7 +124,7 @@ One file per vocabulary, byte-stable, reviewed as code
 ([schema](https://github.com/usestapel/stapel-vocabularies/blob/main/docs/vocabulary-fixture.schema.json)):
 
 ```json
-{ "slug": "avito-phones", "name": "Phones (Avito)", "source": "https://…/phone_catalog.xml",
+{ "slug": "phone-models", "name": "Phone models", "source": "https://…/phone_catalog.xml",
   "levels": [{"name": "Vendor"}, {"name": "Model", "parent": "Vendor"}],
   "terms": [["Vendor", "apple", "Apple", null], ["Model", "iphone-10", "iPhone 10", null]],
   "edges": [["Vendor", "apple", "Model", "iphone-10"]] }

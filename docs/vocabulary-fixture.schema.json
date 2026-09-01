@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/usestapel/stapel-vocabularies/blob/main/docs/vocabulary-fixture.schema.json",
   "title": "Vocabulary fixture",
-  "description": "One reference vocabulary as a reviewable file: its levels, its terms and the parent/child edges between them (spec §3.6). Written by stapel_vocabularies.convert (or the Avito importer), read by `manage.py load_vocabulary`. Byte-stable by construction: terms are sorted by (level index, code) and edges by the emitted 4-tuple, and codes are assigned in label sort order — so re-converting the same catalogue produces the same file, and a diff shows what the vendor changed rather than what the parser felt like doing.",
+  "description": "One reference vocabulary as a reviewable file: its levels, its terms and the parent/child edges between them (spec §3.6). Written by stapel_vocabularies.convert (or a catalogue importer), read by `manage.py load_vocabulary`. Byte-stable by construction: terms are sorted by (level index, code) and edges by the emitted 4-tuple, and codes are assigned in label sort order — so re-converting the same catalogue produces the same file, and a diff shows what the vendor changed rather than what the parser felt like doing.",
   "type": "object",
   "required": ["slug", "name", "levels", "terms"],
   "additionalProperties": false,

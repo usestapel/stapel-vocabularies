@@ -10,14 +10,14 @@ these two calls behind the ``VocabularyResolver`` protocol.
 
     from stapel_core.comm import call
 
-    call("vocabularies.resolve", {"vocabulary": "avito-phones", "level": "Model",
+    call("vocabularies.resolve", {"vocabulary": "phone-models", "level": "Model",
                                   "codes": ["iphone-10"],
                                   "parent": {"level": "Vendor", "code": "apple"}})
     # -> {"exists": {"iphone-10": True}, "labels": {"iphone-10": "iPhone 10"},
     #     "is_child": {"iphone-10": True}}
 
-    call("vocabularies.describe", {"vocabulary": "avito-phones"})
-    # -> {"slug": "avito-phones", "levels": [{"name": "Vendor", "parent": None}, ...],
+    call("vocabularies.describe", {"vocabulary": "phone-models"})
+    # -> {"slug": "phone-models", "levels": [{"name": "Vendor", "parent": None}, ...],
     #     "revision": 7}
 """
 import json
