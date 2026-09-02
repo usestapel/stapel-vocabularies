@@ -12,6 +12,11 @@ setting of the same name → environment variable → the default below.
 `REGISTER_RESOLVER` is the one CTO-facing config axis (capability-config.md
 §16); everything else is a tuning knob.
 
+`QUERY_EXPANDER` is the exception to the environment step: it is an
+`import_strings` key (it names the code the process runs), so it resolves
+via the `STAPEL_VOCABULARIES` dict or a flat Django setting only — a
+same-named environment variable is deliberately ignored.
+
 Booleans and integers are read through `conf.flag()` / `conf.number()`, which
 coerce the string an environment variable hands back — `REGISTER_RESOLVER=false`
 turns the seam off, rather than being a truthy non-empty string.
@@ -29,3 +34,4 @@ fetches nothing. There is no `vault` row and there should never be one.
 | MAX_PAGE_SIZE | env | hard ceiling on `?limit=` for the term listing, and on how many codes one `terms/resolve/` call may name. A page of terms is a typeahead, not an export. | no | 200 |
 | DEFAULT_PAGE_SIZE | env | page size when the client does not ask. | no | 50 |
 | LOAD_BATCH_SIZE | env | rows per `bulk_create`/`bulk_update` batch in `load_vocabulary`. Lower it for a database with a tight parameter limit; it does not change what the load does, only how it is cut up. | no | 2000 |
+| QUERY_EXPANDER | settings | seam: dotted path to the callable `(query: str, language: str) -> Sequence[str]` that turns one typed `?q=` into the match variants the term search ORs together, the literal query included; `language` is the best `Accept-Language` tag (empty when none). The fleet keeps ONE cross-script normalization layer (folding, RU↔EN transliteration, alias groups) and it lives in stapel-search — a composite that runs it points this at `stapel_search.suggest.query_terms`, so «тимберленд» finds "Timberland" in a brand picker with the same variants the suggest matcher uses. The default is this module's own identity expansion, so a standalone install matches exactly the literal substring. An `import_strings` key: resolved lazily via `import_string`, cached, and **never read from the environment** — it names the code the process runs. A path that does not import degrades to literal matching with a log line; system check `stapel_vocabularies.W003` reports it at boot. | no | `stapel_vocabularies.expand.literal` |

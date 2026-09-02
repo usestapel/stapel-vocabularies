@@ -15,8 +15,16 @@ The seams (see MODULE.md):
   ``describe`` it could not revalidate. It also subscribes to
   ``vocabulary.changed``, so this is the ceiling for a deployment where that
   event does not reach it, not the normal invalidation path.
+- ``QUERY_EXPANDER`` — the callable that turns one typed query into the
+  match variants the term search ORs together (see ``expand.py``). The
+  fleet's cross-script layer lives in the search library; this seam is how
+  a deployment consumes it without this module depending on it.
 """
+import logging
+
 from stapel_core.conf import AppSettings
+
+logger = logging.getLogger(__name__)
 
 #: AppSettings-shaped literal dict (capability-config.md §2): a top-level
 #: DEFAULTS lets the capabilities.json emitter introspect axis keys/kinds.
@@ -39,11 +47,22 @@ DEFAULTS = {
     "DEFAULT_PAGE_SIZE": 50,
     # Rows per bulk_create/bulk_update batch in load_vocabulary.
     "LOAD_BATCH_SIZE": 2000,
+    # Seam: `(query: str, language: str) -> Sequence[str]` — the match
+    # variants the term search ORs together, the literal query included.
+    # The default is this module's own identity expansion, so a standalone
+    # install matches exactly what it matched before the seam existed. A
+    # fleet that runs stapel-search points this at
+    # `stapel_search.suggest.query_terms` — the ONE normalization layer.
+    "QUERY_EXPANDER": "stapel_vocabularies.expand.literal",
 }
 
 vocabularies_settings = AppSettings(
     "STAPEL_VOCABULARIES",
     defaults=DEFAULTS,
+    # Resolved with import_string, lazily, cached until setting_changed —
+    # and thereby closed to the environment: a key that names the code the
+    # process runs is not a value an env var may pick.
+    import_strings=("QUERY_EXPANDER",),
 )
 
 #: Truthy spellings accepted for a boolean key set from the environment.
@@ -72,4 +91,38 @@ def number(key: str) -> int:
     return int(value)
 
 
-__all__ = ["DEFAULTS", "flag", "number", "vocabularies_settings"]
+def query_expander():
+    """The configured ``QUERY_EXPANDER`` callable, degraded loudly but safely.
+
+    The term search runs behind somebody's keystrokes, so a dotted path
+    that does not import — a typo, a package the deployment forgot — must
+    cost recall (literal matching only), never a 500. System check W003
+    says the same thing at boot, by name; this is the per-request floor
+    under it.
+    """
+    try:
+        expander = vocabularies_settings.QUERY_EXPANDER
+    except ImportError:
+        logger.warning(
+            "STAPEL_VOCABULARIES['QUERY_EXPANDER'] does not import; term "
+            "searches match the literal query only (see check "
+            "stapel_vocabularies.W003)",
+            exc_info=True,
+        )
+        from .expand import literal
+
+        return literal
+    if not callable(expander):
+        logger.warning(
+            "STAPEL_VOCABULARIES['QUERY_EXPANDER'] resolved to a "
+            "non-callable %r; term searches match the literal query only "
+            "(see check stapel_vocabularies.W003)",
+            expander,
+        )
+        from .expand import literal
+
+        return literal
+    return expander
+
+
+__all__ = ["DEFAULTS", "flag", "number", "query_expander", "vocabularies_settings"]

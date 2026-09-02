@@ -1,6 +1,6 @@
-"""The two boot-time warnings (checks.py).
+"""The boot-time warnings (checks.py).
 
-Both cover the same failure shape and it is this module's worst one: a
+All of them cover the same failure shape and it is this module's worst one: a
 deployment where the term endpoints answer perfectly while every ref-typed
 feature in it refuses to save. Nothing in a request path reports that, so boot
 is where it gets said.
@@ -80,6 +80,39 @@ def test_both_checks_are_registered_with_django():
     names = {check.__name__ for check in registry.registry.get_checks()}
     assert "check_resolver_protocol_available" in names
     assert "check_resolver_registered_where_tables_live" in names
+    assert "check_query_expander_resolves" in names
+
+
+def test_w003_when_the_query_expander_path_does_not_import(settings):
+    """A typo in QUERY_EXPANDER costs recall on every term search — the
+    request path degrades to literal matching and only logs, so boot is
+    where the misconfiguration gets said by name."""
+    from stapel_vocabularies.checks import check_query_expander_resolves
+
+    settings.STAPEL_VOCABULARIES = {
+        "QUERY_EXPANDER": "stapel_vocabularies.expand.no_such_expander"
+    }
+    messages = _ids(check_query_expander_resolves(None))
+    assert messages == ["stapel_vocabularies.W003"]
+
+
+def test_w003_when_the_query_expander_is_not_callable(settings):
+    from stapel_vocabularies.checks import check_query_expander_resolves
+
+    settings.STAPEL_VOCABULARIES = {
+        "QUERY_EXPANDER": "stapel_vocabularies.conf.DEFAULTS"
+    }
+    assert _ids(check_query_expander_resolves(None)) == ["stapel_vocabularies.W003"]
+
+
+def test_w003_is_silent_on_the_default_and_on_a_real_expander(settings):
+    from stapel_vocabularies.checks import check_query_expander_resolves
+
+    assert check_query_expander_resolves(None) == []
+    settings.STAPEL_VOCABULARIES = {
+        "QUERY_EXPANDER": "stapel_vocabularies.expand.literal"
+    }
+    assert check_query_expander_resolves(None) == []
 
 
 @pytest.mark.parametrize("value, expected", [

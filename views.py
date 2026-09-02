@@ -13,8 +13,9 @@ select in a filter panel: anonymous, high-volume, cacheable. So:
   responses uncacheable at the edge and start a session per crawler.
 """
 import hashlib
+import logging
 
-from django.db.models import Case, IntegerField, Value, When
+from django.db.models import Case, IntegerField, Q, Value, When
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework.views import APIView
@@ -22,7 +23,7 @@ from stapel_core.django.api.errors import StapelErrorResponse, StapelResponse
 from stapel_core.django.api.permissions import ReadOnlyOrStaff
 from stapel_core.django.api.views import SerializerSeamMixin
 
-from .conf import number
+from .conf import number, query_expander
 from .errors import (
     ERR_400_BAD_PARENT,
     ERR_404_LEVEL_NOT_FOUND,
@@ -30,6 +31,8 @@ from .errors import (
 )
 from .models import Term, TermEdge, Vocabulary
 from .serializers import TermPageSerializer, VocabularySerializer
+
+logger = logging.getLogger(__name__)
 
 
 def parse_accept_language(header):
@@ -77,6 +80,35 @@ def pick_label(term_labels, label, languages):
             if translated:
                 return translated
     return label
+
+
+def _expand_query(query, languages):
+    """The match variants of one typed query, literal first, deduplicated.
+
+    The buyer who types «тимберленд» means the term labeled "Timberland" —
+    and which scripts spell the same brand is the fleet's ONE normalization
+    layer's knowledge, not this module's. So the query goes through the
+    ``QUERY_EXPANDER`` seam (``expand.py``), in the same language the labels
+    resolve for: the best ``Accept-Language`` tag, empty when the client
+    states none.
+
+    The literal query is prepended if the expander dropped it and the rest
+    is deduplicated, so no expander can make the search narrower than the
+    unexpanded one or OR the same pattern twice. An expander that blows up
+    mid-keystroke costs recall, never the response: log, match literally.
+    """
+    language = languages[0] if languages else ""
+    try:
+        variants = list(query_expander()(query, language))
+    except Exception:
+        logger.warning(
+            "STAPEL_VOCABULARIES['QUERY_EXPANDER'] raised on %r; matching "
+            "the literal query only",
+            query,
+            exc_info=True,
+        )
+        return (query,)
+    return tuple(dict.fromkeys([query, *filter(None, variants)]))
 
 
 def _if_none_match(request, etag):
@@ -175,8 +207,11 @@ class TermListView(SerializerSeamMixin, APIView):
         summary="Search the terms of one level",
         description=(
             "A page of terms at `level`, optionally the children of a `parent` "
-            "term at the level above, optionally matching `q`. Prefix matches "
-            "rank before the rest, then the level's own sort order and label. "
+            "term at the level above, optionally matching `q`. The query is "
+            "expanded to match variants (cross-script, aliases) by the "
+            "deployment's configured expander; a label starting with any "
+            "variant ranks before the rest, then the level's own sort order "
+            "and label. "
             "`has_children` is what tells a cascading control whether to ask "
             "for the next level. `total` counts the whole filtered set, before "
             "limit and offset."
@@ -188,7 +223,11 @@ class TermListView(SerializerSeamMixin, APIView):
                              description="Code of a term at the parent level; "
                                          "restricts the page to its children."),
             OpenApiParameter("q", OpenApiTypes.STR,
-                             description="Case-insensitive substring of the label."),
+                             description="Case-insensitive substring of the "
+                                         "label, matched against every "
+                                         "variant the configured query "
+                                         "expander returns (the literal "
+                                         "query always among them)."),
             OpenApiParameter("limit", OpenApiTypes.INT,
                              description="Page size, 1..200 (default 50)."),
             OpenApiParameter("offset", OpenApiTypes.INT, description="Rows to skip."),
@@ -235,15 +274,21 @@ class TermListView(SerializerSeamMixin, APIView):
         )
         offset = max(0, _integer(request.query_params.get("offset"), 0))
         languages = parse_accept_language(request.META.get("HTTP_ACCEPT_LANGUAGE"))
+        variants = _expand_query(query, languages) if query else ()
 
         def build():
             terms = Term.objects.filter(vocabulary=vocabulary, level=level)
             if parent_id is not None:
                 terms = terms.filter(parent_edges__parent_id=parent_id)
-            if query:
-                terms = terms.filter(label__icontains=query).annotate(
+            if variants:
+                contains = Q()
+                prefix = Q()
+                for variant in variants:
+                    contains |= Q(label__icontains=variant)
+                    prefix |= Q(label__istartswith=variant)
+                terms = terms.filter(contains).annotate(
                     prefix_rank=Case(
-                        When(label__istartswith=query, then=Value(0)),
+                        When(prefix, then=Value(0)),
                         default=Value(1),
                         output_field=IntegerField(),
                     )
@@ -284,7 +329,10 @@ class TermListView(SerializerSeamMixin, APIView):
                 vocabulary.revision,
                 level,
                 parent_code,
-                query,
+                # The variants, not the raw query: swapping the expander
+                # changes the body of the same request, so it must change
+                # the ETag with it.
+                "\x1f".join(variants),
                 limit,
                 offset,
                 ",".join(languages),

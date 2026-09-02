@@ -4,6 +4,41 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
+## [0.1.3] — 2026-09-02
+
+Patch. Additive: a new seam with a default that reproduces today's behavior
+byte-for-byte. No model, migration or fixture-format change.
+
+### Added
+
+- **The term search matches variants, through the fleet's normalization
+  layer — `QUERY_EXPANDER`.** On a classified stand, a buyer typing
+  «тимберленд» into the composer's brand picker never saw the term
+  "Timberland", and «айфон» never found "iPhone": the search matched one
+  literal substring in one script, while the fleet's search library already
+  owned the cross-script layer — folding, RU↔EN transliteration, curated
+  alias groups — and used it for its own suggestions. Two surfaces, one
+  vocabulary, two ideas of what a query means.
+
+  The rule is ONE normalization layer, so this module grows no second copy
+  and takes no dependency on the search library. Instead the term search
+  now sends `?q=` through a configured callable
+  `(query: str, language: str) -> Sequence[str]`
+  (`STAPEL_VOCABULARIES["QUERY_EXPANDER"]`, an `import_strings` key) and
+  ORs `label__icontains` across every variant it returns; a label starting
+  with **any** variant ranks before a mid-label hit, then the level's own
+  sort order and label, as before. `language` is the same negotiated value
+  the labels resolve for — the best `Accept-Language` tag. A composite
+  running stapel-search points the seam at
+  `stapel_search.suggest.query_terms`; standalone, the default
+  (`stapel_vocabularies.expand.literal`) expands to the literal query
+  alone, which is exactly the old behavior.
+
+  A picker runs behind somebody's keystrokes, so a dotted path that does
+  not import — or an expander that raises — costs recall, never the
+  response: the search logs and matches the literal query, and new system
+  check `stapel_vocabularies.W003` names the misconfiguration at boot.
+
 ## [0.1.2] — 2026-09-01
 
 Patch. Documentation and example data only — no model, migration, API,

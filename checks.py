@@ -14,6 +14,10 @@ cannot run with; W-level for what only degrades lazily.
   vocabularies is the one that declined to answer about them, so every
   ``ref_select`` config validation in it fails with "no vocabulary resolver
   registered" while the HTTP surface happily lists the same terms.
+- ``QUERY_EXPANDER`` names something that does not import or is not a
+  callable -> W. The request path degrades to literal matching and logs
+  (a picker must not 500 over a dotted path), so without this check the
+  only trace of the typo is quietly worse recall on every term search.
 """
 from django.core import checks
 
@@ -80,5 +84,43 @@ def check_resolver_registered_where_tables_live(app_configs, **kwargs):
                 "= 'stapel_vocabularies.resolver.CommResolver')."
             ),
             id="stapel_vocabularies.W002",
+        )
+    ]
+
+
+@checks.register(checks.Tags.compatibility)
+def check_query_expander_resolves(app_configs, **kwargs):
+    """W003: the configured query expander is not a callable this process has.
+
+    The term-search view already degrades to literal matching and logs when
+    the seam is broken — a typeahead must answer — so at request time the
+    misconfiguration only shows up as worse recall for the queries the
+    expander existed to serve. Boot is where it gets said by name.
+    """
+    from .conf import vocabularies_settings
+
+    try:
+        expander = vocabularies_settings.QUERY_EXPANDER
+    except ImportError as exc:
+        problem = f"does not import ({exc})"
+    else:
+        if callable(expander):
+            return []
+        problem = f"resolved to a non-callable {expander!r}"
+    return [
+        checks.Warning(
+            f"STAPEL_VOCABULARIES['QUERY_EXPANDER'] {problem}. Every term "
+            "search in this deployment matches the literal query only, so "
+            "the cross-script and alias variants the expander was "
+            "configured to add are silently not matched.",
+            hint=(
+                "Point QUERY_EXPANDER at a callable "
+                "`(query: str, language: str) -> Sequence[str]` — a fleet "
+                "running stapel-search uses "
+                "'stapel_search.suggest.query_terms' — or remove the key to "
+                "fall back to the literal default "
+                "('stapel_vocabularies.expand.literal')."
+            ),
+            id="stapel_vocabularies.W003",
         )
     ]

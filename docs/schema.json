@@ -75,7 +75,7 @@
     "/vocabularies/api/v1/vocabularies/{slug}/terms/": {
       "get": {
         "operationId": "vocabularies_api_v1_vocabularies_terms_retrieve",
-        "description": "A page of terms at `level`, optionally the children of a `parent` term at the level above, optionally matching `q`. Prefix matches rank before the rest, then the level's own sort order and label. `has_children` is what tells a cascading control whether to ask for the next level. `total` counts the whole filtered set, before limit and offset.\n\n**Permissions:** `ReadOnlyOrStaff`",
+        "description": "A page of terms at `level`, optionally the children of a `parent` term at the level above, optionally matching `q`. The query is expanded to match variants (cross-script, aliases) by the deployment's configured expander; a label starting with any variant ranks before the rest, then the level's own sort order and label. `has_children` is what tells a cascading control whether to ask for the next level. `total` counts the whole filtered set, before limit and offset.\n\n**Permissions:** `ReadOnlyOrStaff`",
         "summary": "Search the terms of one level",
         "parameters": [
           {
@@ -117,7 +117,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Case-insensitive substring of the label."
+            "description": "Case-insensitive substring of the label, matched against every variant the configured query expander returns (the literal query always among them)."
           },
           {
             "in": "path",

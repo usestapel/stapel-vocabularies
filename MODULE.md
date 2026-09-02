@@ -58,6 +58,7 @@ carry it. A load bumps it exactly once per file.
 |---|---|---|---|
 | `STAPEL_VOCABULARIES["REGISTER_RESOLVER"]` | boolean axis | `apps.py` | whether this process answers vocabulary questions in-process (`OrmResolver`) or not at all (the host points stapel-attributes at `CommResolver`) |
 | `STAPEL_ATTRIBUTES["VOCABULARY_RESOLVER"]` | dotted path (stapel-attributes' seam) | host settings | where a service WITHOUT the tables resolves: `stapel_vocabularies.resolver.CommResolver` |
+| `STAPEL_VOCABULARIES["QUERY_EXPANDER"]` | dotted path | `conf.py` / `expand.py` | the match variants a term search ORs together — `(query, language) -> Sequence[str]`, literal query included. Default: this module's identity expansion; a fleet running stapel-search points it at `stapel_search.suggest.query_terms`, the fleet's ONE cross-script normalization layer |
 | `response_serializer_class` on each view | class override | `views.py` | the shape of a read response — subclass the view, set the attribute, remount the URL (`SerializerSeamMixin`) |
 | `vocabulary.changed` | comm event | `events.py` | how a consumer learns a catalogue was re-imported |
 | `vocabularies.resolve` / `vocabularies.describe` | comm functions | `functions.py` | how a service without the tables asks |
@@ -232,7 +233,8 @@ resolver.py      OrmResolver, CommResolver, register_orm_resolver
 loader.py        load_fixture / load_files / validate_fixture
 convert.py       nested_xml_to_fixture, csv_to_fixture, dump_fixture   (Django-free)
 slug.py          slugify_term, dedupe_codes                            (Django-free)
-checks.py        W001 (no protocol), W002 (tables here, resolver off)
-conf.py          STAPEL_VOCABULARIES + flag()/number() env coercion
+checks.py        W001 (no protocol), W002 (tables here, resolver off), W003 (expander)
+conf.py          STAPEL_VOCABULARIES + flag()/number() env coercion, query_expander()
+expand.py        literal — the default (identity) query expander      (Django-free)
 docs/            contract artifacts + vocabulary-fixture.schema.json
 ```
