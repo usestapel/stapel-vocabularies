@@ -111,6 +111,67 @@ def _expand_query(query, languages):
     return tuple(dict.fromkeys([query, *filter(None, variants)]))
 
 
+def _vector_function_name() -> str:
+    from .conf import vocabularies_settings
+
+    try:
+        return str(vocabularies_settings.VECTOR_SIMILAR_FUNCTION or "")
+    except AttributeError:
+        return ""
+
+
+def _vector_rows(vocabulary, level, parent_id, query, languages, cap, taken_ids):
+    """Rows the vector net adds under a thin deterministic answer.
+
+    ``similar_labels`` (vector.py) asks the fleet's similarity Function —
+    a no-op while ``VECTOR_SIMILAR_FUNCTION`` is empty, which is the
+    default. What comes back is LABELS across every corpus the far side
+    holds, so scope is re-imposed here: a label that is not a term of THIS
+    vocabulary and level (and parent, in a cascade) is not a row, however
+    much an embedding space likes it. Appended rows carry ``match:
+    "vector"`` so a frontend can render "did you mean" differently from a
+    literal hit; deterministic rows are untouched.
+    """
+    from .vector import similar_labels
+
+    if cap <= 0:
+        return []
+    labels = similar_labels(query, languages[0] if languages else "", limit=cap)
+    if not labels:
+        return []
+    terms = Term.objects.filter(vocabulary=vocabulary, level=level, label__in=labels)
+    if parent_id is not None:
+        terms = terms.filter(parent_edges__parent_id=parent_id)
+    by_label = {}
+    for row in terms.values("id", "code", "label", "labels"):
+        by_label.setdefault(row["label"], row)
+    picked = []
+    for label in labels:
+        row = by_label.get(label)
+        if row is None or row["id"] in taken_ids:
+            continue
+        picked.append(row)
+        if len(picked) >= cap:
+            break
+    if not picked:
+        return []
+    with_children = set(
+        TermEdge.objects.filter(parent_id__in=[row["id"] for row in picked])
+        .values_list("parent_id", flat=True)
+        .distinct()
+    )
+    return [
+        {
+            "code": row["code"],
+            "label": pick_label(row["labels"], row["label"], languages),
+            "level": level,
+            "has_children": row["id"] in with_children,
+            "match": "vector",
+        }
+        for row in picked
+    ]
+
+
 def _if_none_match(request, etag):
     header = request.META.get("HTTP_IF_NONE_MATCH", "")
     candidates = {
@@ -306,19 +367,30 @@ class TermListView(SerializerSeamMixin, APIView):
                 .values_list("parent_id", flat=True)
                 .distinct()
             )
-            return StapelResponse(
+            results = [
                 {
-                    "results": [
-                        {
-                            "code": row["code"],
-                            "label": pick_label(row["labels"], row["label"], languages),
-                            "level": level,
-                            "has_children": row["id"] in with_children,
-                        }
-                        for row in page
-                    ],
-                    "total": total,
+                    "code": row["code"],
+                    "label": pick_label(row["labels"], row["label"], languages),
+                    "level": level,
+                    "has_children": row["id"] in with_children,
                 }
+                for row in page
+            ]
+            appended = []
+            if query and offset == 0 and total < number("VECTOR_MIN_RESULTS"):
+                appended = _vector_rows(
+                    vocabulary,
+                    level,
+                    parent_id,
+                    query,
+                    languages,
+                    limit - len(results),
+                    {row["id"] for row in page},
+                )
+            return StapelResponse(
+                # `total` counts what this page's filters matched plus what
+                # the net added: it may never claim fewer rows than shown.
+                {"results": results + appended, "total": total + len(appended)}
             )
 
         return _conditional(
@@ -336,6 +408,13 @@ class TermListView(SerializerSeamMixin, APIView):
                 limit,
                 offset,
                 ",".join(languages),
+                # Only when the vector net is on: toggling it must move the
+                # ETag, while the off state keeps its exact prior ETags.
+                *(
+                    (str(vector_function),)
+                    if (vector_function := _vector_function_name())
+                    else ()
+                ),
             ),
             build,
         )

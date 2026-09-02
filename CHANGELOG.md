@@ -4,6 +4,36 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
+## [0.1.4] — 2026-09-02
+
+Patch. Additive: the vector net under the term typeahead, off by default —
+with `VECTOR_SIMILAR_FUNCTION` empty (the default) every answer and every
+ETag is byte-identical to 0.1.3. No model, migration or fixture change.
+
+### Added — «тимбирленд» finds Timberland when the deployment can afford it
+
+The QUERY_EXPANDER seam (0.1.3) gave the term search the fleet's
+deterministic normalization; a *phonetic* misspelling is the class no
+deterministic table catches. Where the fleet runs stapel-search's vector
+layer, this module can now stand on it, through the same
+seam-by-comm-name discipline:
+
+- **`vector.similar_labels`** — the consumer: when the first page of a
+  `?q=` answer is thinner than `VECTOR_MIN_RESULTS`, the raw query goes to
+  `VECTOR_SIMILAR_FUNCTION` (`search.similar`) and the labels an embedding
+  space places next to it come back, floor already applied on the far
+  side. Matching terms of the SAME vocabulary, level and parent scope are
+  appended below the deterministic rows, graded `match: "vector"` (a new
+  optional response field, absent on literal rows); `total` counts them.
+  Every failure — provider down, layer disabled, comm error — costs
+  recall, never the response.
+- **`vector.label_corpus`** — the provider: the distinct labels of the
+  levels matching `VECTOR_LABEL_LEVELS` (glob patterns — `brand*`,
+  `marka*`, `Vendor`), for registration in
+  `STAPEL_SEARCH["VECTOR_CORPORA"]` under `VECTOR_KIND`
+  (`vocab_label`). Deliberately scoped: the typo problem lives in the
+  levels people type toward, not in 800k catalogue rows nobody types.
+
 ## [0.1.3] — 2026-09-02
 
 Patch. Additive: a new seam with a default that reproduces today's behavior

@@ -46,6 +46,12 @@ class TermSerializer(serializers.Serializer):
         help_text="Whether this term has any child term — what tells a "
         "cascading control whether to ask for the next level."
     )
+    match = serializers.CharField(
+        required=False,
+        help_text="Present (value `vector`) only on rows the similarity net "
+        "appended under a thin deterministic answer — a 'did you mean' row. "
+        "Absent on every literal match.",
+    )
 
 
 class TermPageSerializer(serializers.Serializer):
@@ -53,7 +59,9 @@ class TermPageSerializer(serializers.Serializer):
 
     results = TermSerializer(many=True)
     total = serializers.IntegerField(
-        help_text="Number of terms matching level/parent/q, before limit and offset."
+        help_text="Number of terms matching level/parent/q, before limit and "
+        "offset — plus any vector-appended rows, so it never claims fewer "
+        "rows than the page shows."
     )
 
 

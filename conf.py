@@ -47,6 +47,20 @@ DEFAULTS = {
     "DEFAULT_PAGE_SIZE": 50,
     # Rows per bulk_create/bulk_update batch in load_vocabulary.
     "LOAD_BATCH_SIZE": 2000,
+    # The vector net under the typeahead (vector.py). Comm name of the
+    # similarity Function — empty (the default) means OFF: no call, no
+    # appended rows, byte-identical answers. A fleet running stapel-search
+    # with its vector layer on sets "search.similar".
+    "VECTOR_SIMILAR_FUNCTION": "",
+    # The corpus kind this module's labels live under on the far side.
+    "VECTOR_KIND": "vocab_label",
+    # Below this many deterministic hits (first page only) the vector net
+    # is consulted.
+    "VECTOR_MIN_RESULTS": 3,
+    # Glob patterns of level names label_corpus() embeds — where the typo
+    # problem lives ("brand*", "brend*", "make*", "marka*", "Vendor").
+    # Empty by default: embedding is a deployment decision with a bill.
+    "VECTOR_LABEL_LEVELS": (),
     # Seam: `(query: str, language: str) -> Sequence[str]` — the match
     # variants the term search ORs together, the literal query included.
     # The default is this module's own identity expansion, so a standalone

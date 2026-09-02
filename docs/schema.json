@@ -247,6 +247,10 @@
           "has_children": {
             "type": "boolean",
             "description": "Whether this term has any child term — what tells a cascading control whether to ask for the next level."
+          },
+          "match": {
+            "type": "string",
+            "description": "Present (value `vector`) only on rows the similarity net appended under a thin deterministic answer — a 'did you mean' row. Absent on every literal match."
           }
         },
         "required": [
@@ -268,7 +272,7 @@
           },
           "total": {
             "type": "integer",
-            "description": "Number of terms matching level/parent/q, before limit and offset."
+            "description": "Number of terms matching level/parent/q, before limit and offset — plus any vector-appended rows, so it never claims fewer rows than the page shows."
           }
         },
         "required": [
