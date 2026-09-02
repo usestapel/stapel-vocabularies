@@ -46,6 +46,14 @@ class TermSerializer(serializers.Serializer):
         help_text="Whether this term has any child term — what tells a "
         "cascading control whether to ask for the next level."
     )
+    band = serializers.ChoiceField(
+        choices=["popular", "all"],
+        help_text="Which band this row is in: `popular` for the short "
+        "recommended band the level opens on, `all` for the alphabet under "
+        "it. Rows are ordered popular-band-first, so a control renders the "
+        "separator from `popular_count` rather than by scanning for the "
+        "change.",
+    )
     match = serializers.CharField(
         required=False,
         help_text="Present (value `vector`) only on rows the similarity net "
@@ -62,6 +70,13 @@ class TermPageSerializer(serializers.Serializer):
         help_text="Number of terms matching level/parent/q, before limit and "
         "offset — plus any vector-appended rows, so it never claims fewer "
         "rows than the page shows."
+    )
+    popular_count = serializers.IntegerField(
+        help_text="How many LEADING rows of `results` are in the popular "
+        "band. The separator goes after index popular_count - 1; 0 means "
+        "this page has no popular band (a page past the boundary, a level "
+        "nobody has ranked, or a `q` search whose top hit is a plain "
+        "prefix match)."
     )
 
 

@@ -34,6 +34,14 @@ from .serializers import TermPageSerializer, VocabularySerializer
 
 logger = logging.getLogger(__name__)
 
+#: Ordering under the optional prefix rank: the popular band first (by
+#: descending popularity), then the level's own curated rank and its
+#: alphabet. `popular_band` rather than `-popularity` alone so that a
+#: hand-entered negative popularity means "not in the band" instead of
+#: "below everything" — the column's contract is `0 = not in the band`, and
+#: a signed column that is only ever read for its sign should say so.
+BAND_ORDER = ("popular_band", "-popularity", "sort", "label")
+
 
 def parse_accept_language(header):
     """Language tags from an ``Accept-Language`` header, best first.
@@ -120,6 +128,33 @@ def _vector_function_name() -> str:
         return ""
 
 
+def _band_annotation():
+    """0 for a term in the popular band, 1 for the alphabet under it."""
+    return Case(
+        When(popularity__gt=0, then=Value(0)),
+        default=Value(1),
+        output_field=IntegerField(),
+    )
+
+
+def _leading_popular(results) -> int:
+    """How many rows at the HEAD of this page are in the popular band.
+
+    Deliberately the leading run rather than a total: what the frontend
+    needs is where to draw one separator, and the answer to that is
+    "after the last row before the first non-popular one". It also stays
+    correct under `q`, where the prefix rank outranks the band and there
+    may be no leading run at all — 0, no separator, which is what a search
+    result list should look like.
+    """
+    count = 0
+    for row in results:
+        if row["band"] != "popular":
+            break
+        count += 1
+    return count
+
+
 def _vector_rows(vocabulary, level, parent_id, query, languages, cap, taken_ids):
     """Rows the vector net adds under a thin deterministic answer.
 
@@ -166,6 +201,11 @@ def _vector_rows(vocabulary, level, parent_id, query, languages, cap, taken_ids)
             "label": pick_label(row["labels"], row["label"], languages),
             "level": level,
             "has_children": row["id"] in with_children,
+            # Always `all`, whatever the term's own popularity. These rows
+            # are a "did you mean" appended BELOW the deterministic answer,
+            # and a recommended band that only appears when the literal
+            # search failed is not a recommended band.
+            "band": "all",
             "match": "vector",
         }
         for row in picked
@@ -271,8 +311,13 @@ class TermListView(SerializerSeamMixin, APIView):
             "term at the level above, optionally matching `q`. The query is "
             "expanded to match variants (cross-script, aliases) by the "
             "deployment's configured expander; a label starting with any "
-            "variant ranks before the rest, then the level's own sort order "
-            "and label. "
+            "variant ranks before the rest, then the popular band, then the "
+            "level's own sort order and label. "
+            "Rows lead with the **popular band** — the short recommended set "
+            "a level opens on instead of whatever the alphabet put first. "
+            "Each row carries `band` (`popular` / `all`) and the page carries "
+            "`popular_count`, the number of leading rows in the band, so a "
+            "control draws its separator without guessing. "
             "`has_children` is what tells a cascading control whether to ask "
             "for the next level. `total` counts the whole filtered set, before "
             "limit and offset."
@@ -337,8 +382,12 @@ class TermListView(SerializerSeamMixin, APIView):
         languages = parse_accept_language(request.META.get("HTTP_ACCEPT_LANGUAGE"))
         variants = _expand_query(query, languages) if query else ()
 
+        band_size = number("POPULAR_BAND_SIZE")
+
         def build():
-            terms = Term.objects.filter(vocabulary=vocabulary, level=level)
+            terms = Term.objects.filter(
+                vocabulary=vocabulary, level=level
+            ).annotate(popular_band=_band_annotation())
             if parent_id is not None:
                 terms = terms.filter(parent_edges__parent_id=parent_id)
             if variants:
@@ -353,12 +402,14 @@ class TermListView(SerializerSeamMixin, APIView):
                         default=Value(1),
                         output_field=IntegerField(),
                     )
-                ).order_by("prefix_rank", "sort", "label")
+                ).order_by("prefix_rank", *BAND_ORDER)
             else:
-                terms = terms.order_by("sort", "label")
+                terms = terms.order_by(*BAND_ORDER)
             total = terms.count()
             page = list(
-                terms.values("id", "code", "label", "labels")[offset:offset + limit]
+                terms.values("id", "code", "label", "labels", "popularity")[
+                    offset:offset + limit
+                ]
             )
             with_children = set(
                 TermEdge.objects.filter(
@@ -373,8 +424,18 @@ class TermListView(SerializerSeamMixin, APIView):
                     "label": pick_label(row["labels"], row["label"], languages),
                     "level": level,
                     "has_children": row["id"] in with_children,
+                    # The band ends at POPULAR_BAND_SIZE rows of the ANSWER,
+                    # and popular rows lead the answer, so a row's position
+                    # decides it — no second query, and a curated fixture
+                    # that promoted forty terms still cannot hand a frontend
+                    # a forty-row "recommended" band.
+                    "band": (
+                        "popular"
+                        if row["popularity"] > 0 and offset + index < band_size
+                        else "all"
+                    ),
                 }
-                for row in page
+                for index, row in enumerate(page)
             ]
             appended = []
             if query and offset == 0 and total < number("VECTOR_MIN_RESULTS"):
@@ -390,7 +451,11 @@ class TermListView(SerializerSeamMixin, APIView):
             return StapelResponse(
                 # `total` counts what this page's filters matched plus what
                 # the net added: it may never claim fewer rows than shown.
-                {"results": results + appended, "total": total + len(appended)}
+                {
+                    "results": results + appended,
+                    "total": total + len(appended),
+                    "popular_count": _leading_popular(results),
+                }
             )
 
         return _conditional(
@@ -408,6 +473,12 @@ class TermListView(SerializerSeamMixin, APIView):
                 limit,
                 offset,
                 ",".join(languages),
+                # Decides which rows are labelled `popular` and therefore
+                # what `popular_count` is: a body-shaping parameter like
+                # any other, so it belongs in the validator. The band
+                # CONTENTS need no part here — promoting a term bumps the
+                # vocabulary's revision, which is already in this digest.
+                band_size,
                 # Only when the vector net is on: toggling it must move the
                 # ETag, while the off state keeps its exact prior ETags.
                 *(

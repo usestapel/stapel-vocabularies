@@ -20,7 +20,7 @@ class VocabularyAdmin(admin.ModelAdmin):
 
 @admin.register(Term)
 class TermAdmin(admin.ModelAdmin):
-    list_display = ("code", "label", "level", "vocabulary", "sort")
+    list_display = ("code", "label", "level", "vocabulary", "sort", "popularity")
     list_filter = ("vocabulary", "level")
     search_fields = ("code", "label", "external_id")
     raw_id_fields = ("vocabulary",)

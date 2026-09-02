@@ -24,7 +24,7 @@ pip install stapel-vocabularies
 
 | Fact | Value |
 |---|---|
-| Version | `0.1.5` |
+| Version | `0.2.0` |
 | Python | `>=3.11` (3.11, 3.12, 3.13, 3.14) |
 | HTTP operations | 4 |
 | Config axes | 1 |
@@ -57,6 +57,19 @@ every form render, and it would be megabytes.
   Anonymous, `ETag`'d on the vocabulary's revision, `Cache-Control:
   public`, and no `Set-Cookie` — so the shared cache in front of it works and
   a crawler does not start a session per request.
+- **A popular band, so a dictionary does not open on the alphabet.** A
+  529-vendor level sorted by name opens on `3Q, 4Good, 8848, A1, Aceline`
+  while the brands carrying the volume sit hundreds of rows down. Push the
+  listing counts you already have — `vocabularies.set_popularity` — and the
+  top twelve lead every page, with `band` on each row and `popular_count` on
+  the page so a control draws its separator without guessing. Idempotent:
+  unchanged counts write nothing and invalidate nothing.
+- **A match that can say no.** `vocabularies.match` turns one free-text guess
+  into one code *with a score* — 1.0 for an exact or transliterated hit, 0.9
+  for a unique prefix, and for a similarity hit the number the vector layer
+  actually reported. Below `MATCH_MIN_SCORE` it answers `{"matched": false}`.
+  That is the difference between a typeahead, where a person picks one of five
+  rows, and a composer, which writes the answer into a listing unread.
 - **Two resolvers, one protocol.** `ref_select` / `ref_hierarchical_select` in
   [stapel-attributes](https://github.com/usestapel/stapel-attributes) validate
   values through a `VocabularyResolver`. `OrmResolver` answers from these
@@ -112,11 +125,36 @@ A feature then points at it instead of carrying options:
 |---|---|---|
 | GET | `/vocabularies/api/v1/vocabularies/` | every vocabulary: `{slug, name, levels, term_count, revision}` |
 | GET | `/vocabularies/api/v1/vocabularies/{slug}/` | one of them |
-| GET | `/vocabularies/api/v1/vocabularies/{slug}/terms/` | `?level=` (required), `?parent=`, `?q=`, `?limit=` (≤200, default 50), `?offset=` → `{results: [{code, label, level, has_children}], total}` |
+| GET | `/vocabularies/api/v1/vocabularies/{slug}/terms/` | `?level=` (required), `?parent=`, `?q=`, `?limit=` (≤200, default 50), `?offset=` → `{results: [{code, label, level, has_children, band}], total, popular_count}` |
 | GET | `/vocabularies/api/v1/vocabularies/{slug}/terms/resolve/` | `?level=&codes=a,b,c` (≤200) → `{code: label}`, unknown codes omitted |
 
 `Accept-Language` selects a translated label where the term carries one; the
 response `Vary`s on it and the `ETag` covers it.
+
+Rows lead with the popular band, then the level's own rank, then the
+alphabet — except under `?q=`, where a prefix match still outranks
+everything, because that is what a typeahead is. `popular_count` is how many
+LEADING rows are in the band, so the separator goes after index
+`popular_count - 1`; `0` means this page has no band.
+
+## Asking over the bus
+
+```python
+from stapel_core.comm import call
+
+call("vocabularies.match", {"vocabulary": "phone-models", "level": "Vendor",
+                            "text": "Самсунг"})
+# -> {"matched": True, "code": "samsung", "label": "Samsung",
+#     "score": 1.0, "method": "exact"}
+
+call("vocabularies.match", {"vocabulary": "phone-models", "level": "Vendor",
+                            "text": "айфон"})
+# -> {"matched": False, "reason": "no_confident_match"}
+
+call("vocabularies.set_popularity", {"vocabulary": "phone-models", "level": "Vendor",
+                                     "counts": {"samsung": 41233, "apple": 38902}})
+# -> {"ranked": 2, "revision": 8}
+```
 
 ## The fixture format
 
@@ -126,13 +164,18 @@ One file per vocabulary, byte-stable, reviewed as code
 ```json
 { "slug": "phone-models", "name": "Phone models", "source": "https://…/phone_catalog.xml",
   "levels": [{"name": "Vendor"}, {"name": "Model", "parent": "Vendor"}],
-  "terms": [["Vendor", "apple", "Apple", null], ["Model", "iphone-10", "iPhone 10", null]],
+  "terms": [["Vendor", "apple", "Apple", null, 0, 90], ["Model", "iphone-10", "iPhone 10", null]],
   "edges": [["Vendor", "apple", "Model", "iphone-10"]] }
 ```
 
 A level's `parent` must be declared before it. That single rule is the whole
 acyclicity argument: a level can only point backwards, so no chain of parents
 can return to where it started.
+
+A term row is `[level, code, label, external_id, sort?, popularity?]`. `sort`
+ranks within a band; `popularity` says which band. Both are optional, and a
+row that omits `popularity` leaves whatever the live term holds — so a
+catalogue re-import never erases a band pushed from observed counts.
 
 ## License
 

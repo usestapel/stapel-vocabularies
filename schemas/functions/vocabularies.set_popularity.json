@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "vocabularies.set_popularity",
+  "description": "Push observed listing counts for one level and rebuild its popular band. This object validates the request payload; the response is {ranked, revision} or null when the vocabulary or the level is unknown — see $defs.Ranking. This module holds no listings and must not learn to: which vendor codes the live listings actually carry is knowledge of the host service that owns them, including what 'live' means there (published, unexpired, this region). So the band is PUSHED, never pulled. The call is idempotent: unchanged counts write nothing, bump no revision and emit no vocabulary.changed, because a nightly job must not kill every ETag in front of the term listing for an order that did not move.",
+  "type": "object",
+  "required": ["vocabulary", "level", "counts"],
+  "properties": {
+    "vocabulary": {
+      "type": "string",
+      "description": "Slug of the vocabulary.",
+      "maxLength": 64
+    },
+    "level": {
+      "type": "string",
+      "description": "Level whose band is being rebuilt. Popularity is scoped to one level: ranking Vendors leaves the Model band alone.",
+      "maxLength": 64
+    },
+    "counts": {
+      "type": "object",
+      "description": "{term code: observed count} — as many codes as the host cares to send. Only the top POPULAR_BAND_SIZE enter the band (ties broken by code, so two runs over the same counts agree); every other term at the level is demoted to 0, which is what lets a vendor that stopped selling fall out of the shortcut on its own. A code naming no term at this level is ignored rather than refused: a host counting listings legitimately holds codes from a catalogue revision this deployment has not imported yet, and refusing the whole push over one of them would freeze the band on stale data.",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Ranking": {
+      "type": ["object", "null"],
+      "description": "The response. null means there is no such vocabulary, or the level is not one of its levels — the same shape vocabularies.describe uses to say 'no such thing'.",
+      "required": ["ranked", "revision"],
+      "properties": {
+        "ranked": {
+          "type": "integer",
+          "description": "How many TERMS were put in the band — not how many codes were sent. Codes that name no term here are not counted."
+        },
+        "revision": {
+          "type": "integer",
+          "description": "The vocabulary's revision after the push. Unchanged when the push changed nothing; bumped (and carried by vocabulary.changed) when it did, because the order of every page of that level just moved and the revision is the cache key this module hands out."
+        }
+      }
+    }
+  }
+}

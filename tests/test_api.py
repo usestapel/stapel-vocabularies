@@ -87,9 +87,24 @@ def test_terms_of_a_level(anonymous_client, phones):
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] == 2
+    # Nothing is promoted here, so both rows are the alphabet and there is
+    # no band to draw a separator after.
+    assert body["popular_count"] == 0
     assert body["results"] == [
-        {"code": "apple", "label": "Apple", "level": "Vendor", "has_children": True},
-        {"code": "samsung", "label": "Samsung", "level": "Vendor", "has_children": True},
+        {
+            "code": "apple",
+            "label": "Apple",
+            "level": "Vendor",
+            "has_children": True,
+            "band": "all",
+        },
+        {
+            "code": "samsung",
+            "label": "Samsung",
+            "level": "Vendor",
+            "has_children": True,
+            "band": "all",
+        },
     ]
 
 

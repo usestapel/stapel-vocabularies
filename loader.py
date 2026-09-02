@@ -81,12 +81,22 @@ def validate_fixture(fixture) -> None:
     level_names = {level["name"] for level in fixture["levels"]}
     declared: set = set()
     for index, row in enumerate(fixture["terms"]):
-        if not isinstance(row, list) or not 3 <= len(row) <= 5:
+        if not isinstance(row, list) or not 3 <= len(row) <= 6:
             raise FixtureError(
-                f"terms[{index}] must be [level, code, label, external_id?, sort?]"
+                f"terms[{index}] must be "
+                "[level, code, label, external_id?, sort?, popularity?]"
             )
         if len(row) > 4 and not isinstance(row[4], int):
             raise FixtureError(f"terms[{index}].sort must be an integer rank")
+        # `bool` is an `int` in Python and `True` would silently become
+        # popularity 1 — a curated band nobody meant to declare.
+        if len(row) > 5 and (
+            isinstance(row[5], bool) or not isinstance(row[5], int) or row[5] < 0
+        ):
+            raise FixtureError(
+                f"terms[{index}].popularity must be a non-negative integer "
+                "(0 = not in the popular band)"
+            )
         level, code, label = row[0], row[1], row[2]
         if level not in level_names:
             raise FixtureError(f"terms[{index}] names unknown level {level!r}")
@@ -111,8 +121,8 @@ def validate_fixture(fixture) -> None:
                 raise FixtureError(f"edges[{index}] names unknown level {name!r}")
 
 
-def _term_rows(fixture) -> List[Tuple[str, str, str, str, int]]:
-    """``(level, code, label, external_id, sort)`` in fixture order.
+def _term_rows(fixture) -> List[Tuple[str, str, str, str, int, Optional[int]]]:
+    """``(level, code, label, external_id, sort, popularity)`` in fixture order.
 
     ``sort`` prefers the row's own 5th column (the optional rank the fixture
     contract grew in stapel-tools 0.62.1) over the row index. Row ORDER is
@@ -120,13 +130,22 @@ def _term_rows(fixture) -> List[Tuple[str, str, str, str, int]]:
     every picker was code-alphabetical forever — a live stand's RAM dropdown
     opened on «0.1 МБ» with «10 ГБ» before «2 ГБ». Rows without the column
     keep the row-index sort they always had.
+
+    ``popularity`` is the optional 6th column and comes back as ``None`` when
+    the row does not state one — **not** as 0. The distinction matters
+    because that column is a curated FALLBACK: the real band is pushed from
+    a host's observed listing counts (``ranking.apply_popularity``), and a
+    catalogue re-import is not evidence that the band changed. A silent row
+    therefore leaves whatever the live term holds; a stated one overwrites
+    it, which is how a curator takes the band back.
     """
     rows = []
     for order, row in enumerate(fixture["terms"]):
         level, code, label = row[0], row[1], row[2]
         external_id = row[3] if len(row) > 3 and row[3] else ""
         sort = row[4] if len(row) > 4 else order
-        rows.append((level, code, label, str(external_id), sort))
+        popularity = row[5] if len(row) > 5 else None
+        rows.append((level, code, label, str(external_id), sort, popularity))
     return rows
 
 
@@ -162,7 +181,7 @@ def _match_terms(rows, existing) -> Dict[Tuple[str, str], dict]:
 
     matched: Dict[Tuple[str, str], dict] = {}
     claimed: Dict[int, Tuple[str, str]] = {}
-    for level, code, label, external_id, _sort in rows:
+    for level, code, label, external_id, _sort, _popularity in rows:
         current = by_ext.get((level, external_id)) if external_id else None
         if current is None:
             current = by_code.get((level, code))
@@ -223,7 +242,7 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
     rows = _term_rows(fixture)
     existing = list(
         Term.objects.filter(vocabulary=vocabulary).values(
-            "id", "level", "code", "label", "external_id", "sort"
+            "id", "level", "code", "label", "external_id", "sort", "popularity"
         )
     )
     matched = _match_terms(rows, existing)
@@ -231,7 +250,7 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
     to_create: List[Term] = []
     to_update: List[Term] = []
     renamed: List[Term] = []
-    for level, code, label, external_id, sort in rows:
+    for level, code, label, external_id, sort, popularity in rows:
         current = matched.get((level, code))
         if current is None:
             to_create.append(
@@ -242,14 +261,20 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
                     label=label,
                     external_id=external_id,
                     sort=sort,
+                    popularity=popularity or 0,
                 )
             )
             continue
+        # A row that states no popularity writes back what the term already
+        # holds, so one bulk_update can carry the column without a silent
+        # row meaning "demote this". See _term_rows.
+        rank = current["popularity"] if popularity is None else popularity
         if (
             current["code"] != code
             or current["label"] != label
             or current["external_id"] != external_id
             or current["sort"] != sort
+            or current["popularity"] != rank
         ):
             term = Term(
                 id=current["id"],
@@ -259,6 +284,7 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
                 label=label,
                 external_id=external_id,
                 sort=sort,
+                popularity=rank,
             )
             to_update.append(term)
             if current["code"] != code:
@@ -325,7 +351,9 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
 
     if to_update:
         Term.objects.bulk_update(
-            to_update, ["code", "label", "external_id", "sort"], batch_size=batch
+            to_update,
+            ["code", "label", "external_id", "sort", "popularity"],
+            batch_size=batch,
         )
     if to_create:
         Term.objects.bulk_create(to_create, batch_size=batch)

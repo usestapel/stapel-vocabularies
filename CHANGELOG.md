@@ -4,6 +4,113 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
+## [0.2.0] — 2026-09-03
+
+**Minor, because the default order of every term page changes and every row
+grows a field.** A dictionary that is only alphabetical, and a similarity
+net whose confidence nobody can read — two complaints from a live stand,
+one release. Migration `0002` adds `Term.popularity` (`AddField`, default
+0) and re-declares the model's ordering; a deployment that promotes nothing
+gets byte-identical pages to 0.1.5 apart from the two new response fields.
+
+### Fixed — the picker opened on `3Q, 4Good, 8848, A1, Aceline, Acer`
+
+A live stand's phone catalogue holds 529 vendors at its `Vendor` level, and
+the first twelve of them, in the only order this module could produce, were `3Q,
+4Good, 8848, A1, Aceline, Acer, AEG, AGGRESSOR, AGM, AGmobile, AIEK,
+Aimoto`. Apple and Samsung were hundreds of rows down. Every marketplace
+that sells phones opens that control on a short band of recommended
+options with the alphabet underneath, and this module had no channel for
+one: `Term.sort` was already spoken for as the curated rank WITHIN a band
+(0.1.5), and 0.1.5 is precisely the release that documented what happens
+when one column is asked to carry two rules.
+
+- **`Term.popularity`** — the second channel. `> 0` puts a term in the
+  popular band, highest first; `0` is the alphabet under it. Ordering is
+  now `prefix_rank?, popular_band, -popularity, sort, label` — the `q`
+  prefix rank stays the OUTERMOST key, because a typeahead where what you
+  typed is not at the top is not a typeahead, band or no band.
+- **The boundary is explicit on the wire**, not inferred. Every term row
+  carries `band` (`"popular"` / `"all"`) and every page carries
+  `popular_count`, the number of LEADING rows in the band: the separator
+  goes after index `popular_count - 1`, and `0` means this page has none —
+  past the boundary, nothing promoted, or a `q` search whose top hit is a
+  plain prefix match. A frontend that had to scan for the change would
+  have to guess again the first time a vector row was appended.
+- **`POPULAR_BAND_SIZE`** (default 12, a dropdown's first screenful) caps
+  the band twice: how many terms `apply_popularity` may promote, and how
+  many leading rows the listing is willing to CALL popular — so a curated
+  fixture that promoted forty cannot hand a frontend a forty-row shortcut.
+  It shapes the body, so it is folded into the listing's ETag.
+
+### Added — the band is derived from what a deployment actually sells
+
+A hand-curated band ages: rank twelve brands today and in eighteen months
+the shortcut past the alphabet points at last year's alphabet. The rank
+that does not age is the one the listings state.
+
+- **`ranking.apply_popularity(vocabulary, level, counts, *, band_size=None)`**
+  takes OBSERVED counts per term code and rebuilds one level's band,
+  demoting everything outside it — a band nothing ever leaves is a curated
+  band with extra steps. Two properties are load-bearing and both are
+  pinned: it is **idempotent** (unchanged counts write nothing, bump no
+  revision and emit no `vocabulary.changed`, so a nightly job does not kill
+  every ETag in front of the term listing for an order that did not move),
+  and it is **bounded in queries** (one `CASE` over the band, one
+  demotion — a statement per term passes every other test in the suite and
+  turns the same job into an outage on a 15 000-term level).
+- **`vocabularies.set_popularity {vocabulary, level, counts}`** —
+  `{ranked, revision}`, or `null` for an unknown vocabulary or level. The
+  counts are PUSHED because this module holds no listings and must not
+  learn to: what "live" means there — published, unexpired, in this region
+  — is the host service's knowledge, not a catalogue's.
+- **A curated fallback for a deployment with no data yet**: the fixture
+  term row grew an optional 6th column, `popularity`, next to 0.1.5's
+  `sort`. A row that OMITS it leaves whatever the live term holds rather
+  than demoting it — otherwise every catalogue re-import would erase the
+  night's count push.
+
+### Added — a free-text guess resolved with a score, or refused
+
+The vector net (0.1.4) works, and on the same stand it answers `q=Самсунг`
+with `[Samsung, Siemens]` — right on the first row — and `q=айфон` with
+`[MyPhone, Fairphone, Elephone]`, three brands that are wrong and merely
+end in the same letters. On the wire those two answers are
+indistinguishable, because the read path **drops the similarity score**.
+That is fine for a typeahead, where a person reads five rows and picks. It
+is not fine for a composer in another service, which writes whatever comes
+back into a listing with no human in between: there, a near-miss is not a
+worse result, it is wrong data nobody looked at.
+
+- **`vocabularies.match {vocabulary, level, text, parent?, min_score?}`**
+  answers `{matched: true, code, label, score, method}` or
+  `{matched: false, reason}` — two shapes, no room for a maybe. Three
+  rungs, each with a real number: **exact** (`1.0` — the folded label, the
+  code, or the code `slug.slugify_term` would mint from the text, which is
+  how «Самсунг» reaches `samsung` with no embedding and no bill), **unique
+  prefix** (`0.9` — two candidates is a different question, not a weaker
+  match: "iPhone 1" is two phones and picking one writes the wrong model
+  number into somebody's listing), and **vector**, carrying the similarity
+  the far side stated, verbatim.
+- **A neighbour returned without a score is refused**, not scored by us. A
+  confidence nobody measured is not a confidence, and inventing one here
+  would be the very defect this Function exists to close, one layer down.
+- **`MATCH_MIN_SCORE`** (default `0.8`) is the floor, overridable per call
+  with `min_score`. Calibrated on the evidence above: a floor has to sit
+  above the "shares a substring" band that produced MyPhone / Fairphone /
+  Elephone, and above the far side's own floor, which plainly passed them,
+  while leaving room for a true neighbour. The asymmetry decides the rest —
+  a refusal costs the caller one clarifying question, a false positive
+  costs a wrong value in a published listing.
+- **Nothing in the vector path leaves the Function as an exception.** An
+  unconfigured seam, a provider that is down, a malformed answer and a
+  genuinely low score are one answer: a prompt `matched: false`. A composer
+  that 500s because a vector index is rebuilding is a composer that stops
+  composing.
+- **`vector.similar_scored`** is the scored half of the seam;
+  `similar_labels` is now that call with the numbers dropped, which is all
+  the typeahead ever needed.
+
 ## [0.1.5] — 2026-09-02
 
 ### Fixed — every picker was code-alphabetical, and nothing could fix it

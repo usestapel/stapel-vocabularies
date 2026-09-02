@@ -75,7 +75,7 @@
     "/vocabularies/api/v1/vocabularies/{slug}/terms/": {
       "get": {
         "operationId": "vocabularies_api_v1_vocabularies_terms_retrieve",
-        "description": "A page of terms at `level`, optionally the children of a `parent` term at the level above, optionally matching `q`. The query is expanded to match variants (cross-script, aliases) by the deployment's configured expander; a label starting with any variant ranks before the rest, then the level's own sort order and label. `has_children` is what tells a cascading control whether to ask for the next level. `total` counts the whole filtered set, before limit and offset.\n\n**Permissions:** `ReadOnlyOrStaff`",
+        "description": "A page of terms at `level`, optionally the children of a `parent` term at the level above, optionally matching `q`. The query is expanded to match variants (cross-script, aliases) by the deployment's configured expander; a label starting with any variant ranks before the rest, then the popular band, then the level's own sort order and label. Rows lead with the **popular band** — the short recommended set a level opens on instead of whatever the alphabet put first. Each row carries `band` (`popular` / `all`) and the page carries `popular_count`, the number of leading rows in the band, so a control draws its separator without guessing. `has_children` is what tells a cascading control whether to ask for the next level. `total` counts the whole filtered set, before limit and offset.\n\n**Permissions:** `ReadOnlyOrStaff`",
         "summary": "Search the terms of one level",
         "parameters": [
           {
@@ -209,6 +209,14 @@
   },
   "components": {
     "schemas": {
+      "BandEnum": {
+        "enum": [
+          "popular",
+          "all"
+        ],
+        "type": "string",
+        "description": "* `popular` - popular\n* `all` - all"
+      },
       "Level": {
         "type": "object",
         "description": "One level of a vocabulary.",
@@ -248,12 +256,21 @@
             "type": "boolean",
             "description": "Whether this term has any child term — what tells a cascading control whether to ask for the next level."
           },
+          "band": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BandEnum"
+              }
+            ],
+            "description": "Which band this row is in: `popular` for the short recommended band the level opens on, `all` for the alphabet under it. Rows are ordered popular-band-first, so a control renders the separator from `popular_count` rather than by scanning for the change.\n\n* `popular` - popular\n* `all` - all"
+          },
           "match": {
             "type": "string",
             "description": "Present (value `vector`) only on rows the similarity net appended under a thin deterministic answer — a 'did you mean' row. Absent on every literal match."
           }
         },
         "required": [
+          "band",
           "code",
           "has_children",
           "label",
@@ -273,9 +290,14 @@
           "total": {
             "type": "integer",
             "description": "Number of terms matching level/parent/q, before limit and offset — plus any vector-appended rows, so it never claims fewer rows than the page shows."
+          },
+          "popular_count": {
+            "type": "integer",
+            "description": "How many LEADING rows of `results` are in the popular band. The separator goes after index popular_count - 1; 0 means this page has no popular band (a page past the boundary, a level nobody has ranked, or a `q` search whose top hit is a plain prefix match)."
           }
         },
         "required": [
+          "popular_count",
           "results",
           "total"
         ]

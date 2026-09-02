@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "vocabularies.match",
+  "description": "Resolve ONE free-text guess to ONE term code, with a score, or refuse. This object validates the request payload; the response is the two-shaped answer in $defs.Match. The caller is not a keyboard — it is a composer in another service holding a string it got out of a photo, a title or a language model, and whatever comes back is written into a listing with no human in between. So this is not a search: a search may answer loosely because a person reads five rows and picks. Here a wrong code is silently wrong data and a refusal costs one clarifying question, which is why every candidate is scored against a floor and everything under it comes back matched:false. The ladder is exact (1.0), unique prefix (0.9), then the vector seam, which returns the similarity the far side actually stated — an unscored answer is refused rather than assigned a number.",
+  "type": "object",
+  "required": ["vocabulary", "level", "text"],
+  "properties": {
+    "vocabulary": {
+      "type": "string",
+      "description": "Slug of the vocabulary.",
+      "maxLength": 64
+    },
+    "level": {
+      "type": "string",
+      "description": "Level to match within.",
+      "maxLength": 64
+    },
+    "text": {
+      "type": "string",
+      "description": "The free-text guess — a label in any script, or a code. Whitespace is trimmed.",
+      "maxLength": 255
+    },
+    "parent": {
+      "type": ["object", "null"],
+      "description": "When given, only children of this term are candidates — the same parentage rule vocabularies.resolve applies (a Color under a Model, a Model under a Vendor). A parent naming no term matches nothing rather than falling back to the whole level.",
+      "required": ["level", "code"],
+      "properties": {
+        "level": { "type": "string", "maxLength": 64 },
+        "code": { "type": "string", "maxLength": 128 }
+      },
+      "additionalProperties": false
+    },
+    "min_score": {
+      "type": ["number", "null"],
+      "description": "Floor for this call, overriding STAPEL_VOCABULARIES['MATCH_MIN_SCORE'] (default 0.8). Raise it where a wrong value is expensive, lower it where a human still confirms the answer.",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Match": {
+      "type": "object",
+      "description": "The response. Exactly two shapes, and `matched` is which: a hit carries code/label/score/method, a miss carries only a reason. There is deliberately no third shape holding a low-confidence guess.",
+      "required": ["matched"],
+      "properties": {
+        "matched": { "type": "boolean" },
+        "code": {
+          "type": "string",
+          "description": "The matched term's code, on a hit. This is the value a listing stores.",
+          "maxLength": 128
+        },
+        "label": {
+          "type": "string",
+          "description": "The matched term's label, on a hit — so the caller can show a human what it decided.",
+          "maxLength": 255
+        },
+        "score": {
+          "type": "number",
+          "description": "Confidence, on a hit: 1.0 for an exact hit on a folded label or on a code, 0.9 for a UNIQUE prefix hit, and for a vector hit the similarity the underlying Function stated, verbatim. Never a number this module invented."
+        },
+        "method": {
+          "type": "string",
+          "enum": ["exact", "prefix", "vector"],
+          "description": "Which rung answered. Worth logging: a deployment where everything arrives by `vector` is one whose catalogue labels do not match how its sellers write."
+        },
+        "reason": {
+          "type": "string",
+          "enum": ["no_confident_match", "unknown_vocabulary", "unknown_level"],
+          "description": "Why there is no answer, on a miss. `no_confident_match` covers every 'the question was well formed and nothing cleared the floor' case — including an ambiguous prefix, a parent that scopes everything out, an unconfigured or unreachable vector seam, and a neighbour returned without a score."
+        }
+      }
+    }
+  }
+}

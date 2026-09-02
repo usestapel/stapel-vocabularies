@@ -41,7 +41,7 @@
       "items": {
         "type": "array",
         "minItems": 4,
-        "maxItems": 5,
+        "maxItems": 6,
         "prefixItems": [
           {
             "type": "string",
@@ -70,6 +70,11 @@
             "type": "integer",
             "minimum": 0,
             "description": "Optional explicit sort rank within the level. The loader (stapel-vocabularies >= 0.1.4) prefers it over fixture row order; row order itself stays canonical (level index, code) for reviewability (VOC004). Omitted = row order, the historical behavior."
+          },
+          {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Optional curated popularity (stapel-vocabularies >= 0.2.0): > 0 puts the term in the level's popular band, highest first; 0 leaves it in the alphabet under the band. Distinct from sort, which ranks WITHIN a band. This column is the fallback for a deployment with no data yet — the band a live service actually runs on is pushed from observed listing counts (vocabularies.set_popularity), and a row that OMITS this column leaves whatever the live term holds rather than demoting it, so a catalogue re-import does not erase a nightly count push."
           }
         ],
         "items": false

@@ -47,6 +47,12 @@ DEFAULTS = {
     "DEFAULT_PAGE_SIZE": 50,
     # Rows per bulk_create/bulk_update batch in load_vocabulary.
     "LOAD_BATCH_SIZE": 2000,
+    # How many terms of one level may sit in the popular band: how many
+    # ranking.apply_popularity promotes, and how many leading rows the read
+    # surface is willing to CALL popular. Twelve is a phone dropdown's first
+    # screenful — the band is a shortcut past the alphabet, and a shortcut
+    # nobody can take in at a glance is just a second alphabet.
+    "POPULAR_BAND_SIZE": 12,
     # The vector net under the typeahead (vector.py). Comm name of the
     # similarity Function — empty (the default) means OFF: no call, no
     # appended rows, byte-identical answers. A fleet running stapel-search
@@ -61,6 +67,11 @@ DEFAULTS = {
     # problem lives ("brand*", "brend*", "make*", "marka*", "Vendor").
     # Empty by default: embedding is a deployment decision with a bill.
     "VECTOR_LABEL_LEVELS": (),
+    # Floor under vocabularies.match: a candidate scoring below this is not
+    # returned at all. See functions.match_function for the calibration —
+    # short version, the caller writes the answer into a listing without a
+    # human in between, so the default errs toward "no match".
+    "MATCH_MIN_SCORE": 0.8,
     # Seam: `(query: str, language: str) -> Sequence[str]` — the match
     # variants the term search ORs together, the literal query included.
     # The default is this module's own identity expansion, so a standalone
@@ -105,6 +116,19 @@ def number(key: str) -> int:
     return int(value)
 
 
+def real(key: str) -> float:
+    """Read a float key, tolerating the string an env var hands back.
+
+    Same reason as ``number()``: ``MATCH_MIN_SCORE=0.75`` in the environment
+    arrives as the string ``"0.75"``, and comparing a similarity score
+    against a string is a TypeError at the worst possible moment.
+    """
+    value = getattr(vocabularies_settings, key)
+    if isinstance(value, str):
+        return float(value.strip())
+    return float(value)
+
+
 def query_expander():
     """The configured ``QUERY_EXPANDER`` callable, degraded loudly but safely.
 
@@ -139,4 +163,11 @@ def query_expander():
     return expander
 
 
-__all__ = ["DEFAULTS", "flag", "number", "query_expander", "vocabularies_settings"]
+__all__ = [
+    "DEFAULTS",
+    "flag",
+    "number",
+    "query_expander",
+    "real",
+    "vocabularies_settings",
+]

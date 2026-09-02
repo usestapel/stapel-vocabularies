@@ -9,11 +9,14 @@ Two halves, both optional, both empty by default:
   lives. Scope is deliberate: an 800k-term store embedded wholesale is
   mostly strings nobody types; the levels people type toward are a corpus
   a thousand times smaller.
-- :func:`similar_labels` is the CONSUMER: the term typeahead's question to
-  ``VECTOR_SIMILAR_FUNCTION`` (``search.similar``) when its own
-  deterministic answer came back thin. This module never learns what an
-  embedding is — it sends the raw query and gets labels back, best first,
-  floor already applied on the other side.
+- :func:`similar_scored` is the CONSUMER: the question to
+  ``VECTOR_SIMILAR_FUNCTION`` (``search.similar``) when a deterministic
+  answer came back thin. This module never learns what an embedding is — it
+  sends the raw query and gets labels back, best first, with whatever
+  similarity the far side chose to state. :func:`similar_labels` is the
+  same call with the numbers dropped, which is all the typeahead needs: a
+  human reads the rows and decides. ``vocabularies.match`` decides on its
+  own behalf and therefore keeps them.
 
 The split mirrors QUERY_EXPANDER exactly: the fleet keeps ONE similarity
 layer, it lives in the search library, and this module consumes it through
@@ -70,12 +73,40 @@ def label_corpus():
         }
 
 
-def similar_labels(query: str, language: str, *, limit: int) -> list[str]:
-    """Labels an embedding space places near *query*, best first.
+def _score(hit: dict):
+    """The similarity a hit states, or ``None`` when it states none.
+
+    ``None`` is an answer, not a missing value, and it must survive up to
+    the caller. A provider that ranked its results without publishing the
+    numbers has told us an ORDER and nothing about confidence; a consumer
+    that needs a threshold (``vocabularies.match``) has to be able to tell
+    that apart from a low score, and the one thing it must never do is
+    substitute a number of its own.
+
+    Two spellings are accepted because the fleet's similarity Function has
+    shipped both: ``score`` is the contract, ``similarity`` the older name.
+    """
+    for key in ("score", "similarity"):
+        value = hit.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def similar_scored(query: str, language: str, *, limit: int):
+    """``[(label, score|None), ...]`` an embedding space places near *query*.
+
+    The scored half of the seam. :func:`similar_labels` is this with the
+    numbers dropped — which is all the typeahead needs, because a human
+    reads the rows and decides. A caller that decides on its own behalf
+    needs the numbers, and this is where they stay.
 
     Empty on every failure — an unreachable provider, a degraded answer, a
-    disabled flag on the far side. The typeahead loses recall, never the
-    response; same posture as a QUERY_EXPANDER that raises.
+    disabled flag on the far side.
     """
     from stapel_core.comm import call
 
@@ -97,10 +128,20 @@ def similar_labels(query: str, language: str, *, limit: int) -> list[str]:
                        exc_info=True)
         return []
     return [
-        str(hit.get("text") or "")
+        (str(hit.get("text")), _score(hit))
         for hit in (answer or {}).get("results") or []
         if hit.get("text")
     ]
 
 
-__all__ = ["label_corpus", "similar_labels"]
+def similar_labels(query: str, language: str, *, limit: int) -> list[str]:
+    """Labels an embedding space places near *query*, best first.
+
+    Empty on every failure — an unreachable provider, a degraded answer, a
+    disabled flag on the far side. The typeahead loses recall, never the
+    response; same posture as a QUERY_EXPANDER that raises.
+    """
+    return [label for label, _ in similar_scored(query, language, limit=limit)]
+
+
+__all__ = ["label_corpus", "similar_labels", "similar_scored"]

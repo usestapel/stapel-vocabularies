@@ -79,7 +79,7 @@ def similar_provider():
 def test_off_by_default_and_silent(anonymous_client, timberland, similar_provider):
     resp = anonymous_client.get(f"{BASE}/vocabularies/shoes/terms/?level=brand&q=тимбирленд")
     assert resp.status_code == 200
-    assert resp.json() == {"results": [], "total": 0}
+    assert resp.json() == {"results": [], "total": 0, "popular_count": 0}
     assert similar_provider.payloads == []
 
 
@@ -98,10 +98,15 @@ def test_a_thin_answer_asks_the_vector_and_appends(
             "label": "Timberland",
             "level": "brand",
             "has_children": False,
+            # An appended "did you mean" row is never the popular band,
+            # whatever the term's own popularity: a recommended band that
+            # only appears when the literal search failed is not one.
+            "band": "all",
             "match": "vector",
         }
     ]
     assert body["total"] == 1
+    assert body["popular_count"] == 0
     assert similar_provider.payloads[0]["kind"] == "vocab_label"
     assert similar_provider.payloads[0]["q"] == "тимбирленд"
 
@@ -157,7 +162,7 @@ def test_a_comm_failure_costs_recall_never_the_response(
                 f"{BASE}/vocabularies/shoes/terms/?level=brand&q=тимбирленд"
             )
         assert resp.status_code == 200
-        assert resp.json() == {"results": [], "total": 0}
+        assert resp.json() == {"results": [], "total": 0, "popular_count": 0}
     finally:
         function_registry._providers.pop("search.similar", None)
 

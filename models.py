@@ -124,7 +124,22 @@ class Term(models.Model):
     labels = models.JSONField(default=dict, blank=True)
     #: The source catalogue's own id, when it has one. Never the code.
     external_id = models.CharField(max_length=64, blank=True, default="")
+    #: Curated rank WITHIN a band — the fixture row's own 5th column, or the
+    #: row index when it has none. Says nothing about which band.
     sort = models.IntegerField(default=0)
+    #: Which band, and where in it: > 0 = the popular band, higher first;
+    #: 0 = the alphabet underneath. Deliberately NOT ``sort``. A dictionary
+    #: sorted purely by name opens on whatever the alphabet put first — a
+    #: live stand's 529-vendor level opens on «3Q, 4Good, 8848, A1, Aceline»
+    #: while the two brands carrying the volume sit hundreds of rows down —
+    #: and every market leader answers that with a short band of recommended
+    #: options above the alphabet. That is a SECOND rule, and 0.1.5 is the
+    #: release that learned what happens when one column carries two: the
+    #: fixture's canonical row order and the picker's order fought, and the
+    #: picker lost. So the band gets its own channel, written from observed
+    #: listing counts (``ranking.apply_popularity``) or curated in a
+    #: fixture's 6th column until a deployment has any.
+    popularity = models.IntegerField(default=0, db_index=True)
 
     class Meta:
         constraints = [
@@ -135,7 +150,10 @@ class Term(models.Model):
         indexes = [
             models.Index(fields=["vocabulary", "level", "label"], name="voc_term_lbl_idx"),
         ]
-        ordering = ["sort", "label"]
+        #: Band first, then the curated rank, then the alphabet. Identical to
+        #: the historical ``["sort", "label"]`` in a deployment that has
+        #: promoted nothing, because every ``popularity`` is then 0.
+        ordering = ["-popularity", "sort", "label"]
 
     def __str__(self):
         return f"{self.level}:{self.code}"
