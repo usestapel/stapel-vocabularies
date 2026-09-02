@@ -81,10 +81,12 @@ def validate_fixture(fixture) -> None:
     level_names = {level["name"] for level in fixture["levels"]}
     declared: set = set()
     for index, row in enumerate(fixture["terms"]):
-        if not isinstance(row, list) or not 3 <= len(row) <= 4:
+        if not isinstance(row, list) or not 3 <= len(row) <= 5:
             raise FixtureError(
-                f"terms[{index}] must be [level, code, label, external_id?]"
+                f"terms[{index}] must be [level, code, label, external_id?, sort?]"
             )
+        if len(row) > 4 and not isinstance(row[4], int):
+            raise FixtureError(f"terms[{index}].sort must be an integer rank")
         level, code, label = row[0], row[1], row[2]
         if level not in level_names:
             raise FixtureError(f"terms[{index}] names unknown level {level!r}")
@@ -110,12 +112,21 @@ def validate_fixture(fixture) -> None:
 
 
 def _term_rows(fixture) -> List[Tuple[str, str, str, str, int]]:
-    """``(level, code, label, external_id, sort)`` in fixture order."""
+    """``(level, code, label, external_id, sort)`` in fixture order.
+
+    ``sort`` prefers the row's own 5th column (the optional rank the fixture
+    contract grew in stapel-tools 0.62.1) over the row index. Row ORDER is
+    canonical ``(level, code)`` for reviewability, so with no explicit rank
+    every picker was code-alphabetical forever — a live stand's RAM dropdown
+    opened on «0.1 МБ» with «10 ГБ» before «2 ГБ». Rows without the column
+    keep the row-index sort they always had.
+    """
     rows = []
     for order, row in enumerate(fixture["terms"]):
         level, code, label = row[0], row[1], row[2]
         external_id = row[3] if len(row) > 3 and row[3] else ""
-        rows.append((level, code, label, str(external_id), order))
+        sort = row[4] if len(row) > 4 else order
+        rows.append((level, code, label, str(external_id), sort))
     return rows
 
 

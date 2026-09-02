@@ -24,7 +24,7 @@ pip install stapel-vocabularies
 
 | Fact | Value |
 |---|---|
-| Version | `0.1.4` |
+| Version | `0.1.5` |
 | Python | `>=3.11` (3.11, 3.12, 3.13, 3.14) |
 | HTTP operations | 4 |
 | Config axes | 1 |

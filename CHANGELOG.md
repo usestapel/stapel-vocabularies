@@ -4,6 +4,20 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
+## [0.1.5] — 2026-09-02
+
+### Fixed — every picker was code-alphabetical, and nothing could fix it
+
+`Term.sort` was assigned from fixture ROW order, and the fixture contract
+canonicalizes row order as `(level index, code)` for reviewability
+(stapel-tools VOC004) — one channel serving two rules, so a live stand's
+RAM dropdown opened on «0.1 МБ» with «10 ГБ» before «2 ГБ», and an
+importer that reordered rows to fix it broke the review gate. The term
+row's optional 5th column (stapel-tools 0.62.1) now carries an explicit
+integer rank; `_term_rows` prefers it over the row index. A 4-column
+fixture loads byte-for-byte as before; a non-integer rank is refused by
+name (`FixtureError`), not 26 000 rows in.
+
 ## [0.1.4] — 2026-09-02
 
 Patch. Additive: the vector net under the term typeahead, off by default —

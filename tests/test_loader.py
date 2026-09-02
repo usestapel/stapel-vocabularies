@@ -52,6 +52,35 @@ def test_a_first_load_creates_everything():
     assert TermEdge.objects.count() == 2
 
 
+def test_an_explicit_sort_rank_outranks_row_order():
+    """The optional 5th column (stapel-tools 0.62.1's fixture contract).
+
+    Row order is canonical (level, code) for reviewability — VOC004 — and
+    this loader turns row order into ``Term.sort``, so without the column
+    every picker was doomed to code-alphabetical order: a live stand's RAM
+    dropdown opened on «0.1 МБ» and put «10 ГБ» before «2 ГБ». A row that
+    states its rank keeps it; a row that does not keeps the historical
+    row-order behavior, so 4-column fixtures load byte-for-byte the same.
+    """
+    ranked = fixture(terms=[
+        ["Vendor", "apple", "Apple", None],
+        ["Vendor", "samsung", "Samsung", None],
+        ["Model", "iphone-10", "iPhone 10", "10", 2],
+        ["Model", "galaxy-s10", "Galaxy S10", None, 1],
+    ])
+    load_fixture(ranked)
+    models = list(
+        Term.objects.filter(level="Model").order_by("sort", "label")
+        .values_list("label", "sort")
+    )
+    assert models == [("Galaxy S10", 1), ("iPhone 10", 2)]
+    vendors = dict(
+        Term.objects.filter(level="Vendor").values_list("label", "sort")
+    )
+    # Unranked rows keep the row-order sort they always had.
+    assert vendors == {"Apple": 0, "Samsung": 1}
+
+
 def test_one_file_is_exactly_one_revision_and_one_event(captured_events):
     """The whole reason the loader is not a loop over save()."""
     load_fixture(fixture())
