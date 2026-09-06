@@ -117,6 +117,76 @@ def test_a_payload_the_schema_refuses_does_not_reach_the_function(phones):
         )
 
 
+# --- children ---------------------------------------------------------------
+
+
+def test_children_lists_only_the_terms_the_parent_scopes(phones):
+    """The whole point of the read: a page a caller can reason ABOUT, scoped
+    the way the picker scopes it."""
+    answer = call(
+        "vocabularies.children",
+        {
+            "vocabulary": "phones",
+            "level": "Model",
+            "parent": {"level": "Vendor", "code": "apple"},
+        },
+    )
+    assert sorted(row["code"] for row in answer["results"]) == [
+        "iphone-10",
+        "iphone-11",
+    ]
+    assert {row["label"] for row in answer["results"]} == {"iPhone 10", "iPhone 11"}
+    assert answer["truncated"] is False
+
+
+def test_children_with_no_parent_lists_the_whole_level(phones):
+    answer = call("vocabularies.children", {"vocabulary": "phones", "level": "Vendor"})
+    assert sorted(row["code"] for row in answer["results"]) == ["apple", "samsung"]
+
+
+def test_a_parent_that_names_no_term_scopes_nothing(phones):
+    """Never the whole level. "That vendor is not here" and "it has no
+    models" are the same refusal to this caller — and an unscoped level is
+    how a value from under the wrong parent gets written into a listing."""
+    answer = call(
+        "vocabularies.children",
+        {
+            "vocabulary": "phones",
+            "level": "Model",
+            "parent": {"level": "Vendor", "code": "nokia"},
+        },
+    )
+    assert answer == {"results": [], "truncated": False}
+
+
+def test_an_unknown_level_is_none_not_an_empty_page(phones):
+    """A re-import that renames a level must not read as "this parent has no
+    children" — that is a silent success on a question nobody answered."""
+    assert call(
+        "vocabularies.children", {"vocabulary": "phones", "level": "Gone"}
+    ) is None
+    assert call(
+        "vocabularies.children", {"vocabulary": "nope", "level": "Vendor"}
+    ) is None
+
+
+def test_a_page_that_was_cut_short_says_so(phones):
+    """`truncated` is what stops a caller concluding "exactly one" from a
+    page the store cut short. Apple has two models; asking for one says both
+    that there is one row and that there is more."""
+    answer = call(
+        "vocabularies.children",
+        {
+            "vocabulary": "phones",
+            "level": "Model",
+            "parent": {"level": "Vendor", "code": "apple"},
+            "limit": 1,
+        },
+    )
+    assert len(answer["results"]) == 1
+    assert answer["truncated"] is True
+
+
 # --- the event --------------------------------------------------------------
 
 
@@ -135,7 +205,10 @@ def test_the_emit_schema_is_committed():
     assert schema["additionalProperties"] is False
 
 
-@pytest.mark.parametrize("name", ["vocabularies.resolve", "vocabularies.describe"])
+@pytest.mark.parametrize(
+    "name",
+    ["vocabularies.resolve", "vocabularies.describe", "vocabularies.children"],
+)
 def test_every_function_carries_its_schema(name):
     schema = json.loads(
         (SCHEMAS / "functions" / f"{name}.json").read_text(encoding="utf-8")

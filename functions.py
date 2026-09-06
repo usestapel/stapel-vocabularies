@@ -145,6 +145,77 @@ def resolve_function(payload: dict) -> dict:
     return {"exists": exists, "labels": labels, "is_child": is_child}
 
 
+@function("vocabularies.children", schema=_schema("vocabularies.children"))
+def children_function(payload: dict) -> dict:
+    """The terms of one level that one parent term scopes — a page of them.
+
+    The comm half of the term listing the picker walks over HTTP, and the
+    third question a caller with no code can ask. ``describe`` says what the
+    levels are, ``resolve`` and ``match`` answer about codes a caller already
+    holds or can spell; this one answers "what are the choices HERE", which
+    is what a caller needs when it is not a person choosing.
+
+    It exists because a consumer had to reason ABOUT a set rather than pick
+    from it. stapel-agent's feature descent settles a car's generation — a
+    thing no photograph shows — by asking which generation of the resolved
+    model has the seller's year in its year set. Every part of that question
+    was already in this store, and there was no way to ask it without the
+    tables: ``resolve`` tests codes you can name, and the codes of a
+    generation are exactly what the caller cannot name.
+
+    ``None`` for an unknown vocabulary or an unknown level, the same way
+    ``describe`` and ``set_popularity`` say "no such thing" — a caller
+    asking at a level that a re-import renamed must not read an empty page as
+    "this parent has no children".
+
+    A ``parent`` that names no term scopes NOTHING, and answers an empty
+    page rather than the whole level — the rule ``_match_scope`` states, for
+    the same reason: an unscoped level is how a value from under the wrong
+    parent gets written into a listing.
+
+    ``truncated`` is the load-bearing field. A caller that reasons about the
+    set (is there exactly one generation holding this year?) draws a WRONG
+    conclusion from a page that was cut short, and it cannot tell a full page
+    from a complete one by its length alone.
+    """
+    from .conf import number
+    from .models import Term, Vocabulary
+
+    vocabulary = Vocabulary.objects.filter(slug=payload["vocabulary"]).first()
+    if vocabulary is None:
+        return None
+    level = payload["level"]
+    if not vocabulary.has_level(level):
+        return None
+
+    terms = Term.objects.filter(vocabulary=vocabulary, level=level)
+    parent = payload.get("parent")
+    if parent:
+        parent_id = (
+            Term.objects.filter(
+                vocabulary=vocabulary, level=parent["level"], code=parent["code"]
+            )
+            .values_list("id", flat=True)
+            .first()
+        )
+        if parent_id is None:
+            return {"results": [], "truncated": False}
+        terms = terms.filter(parent_edges__parent_id=parent_id)
+
+    limit = payload.get("limit")
+    limit = number("DEFAULT_PAGE_SIZE") if limit is None else int(limit)
+    limit = max(1, min(limit, number("MAX_PAGE_SIZE")))
+    # One more than asked for, and it is not returned: that is the only way
+    # `truncated` can be true without a second COUNT over the same set.
+    rows = list(terms.values("code", "label")[: limit + 1])
+    return {
+        "results": [
+            {"code": row["code"], "label": row["label"]} for row in rows[:limit]
+        ],
+        "truncated": len(rows) > limit,
+    }
+
+
 @function("vocabularies.set_popularity", schema=_schema("vocabularies.set_popularity"))
 def set_popularity_function(payload: dict) -> dict:
     """Rebuild one level's popular band from a host's observed listing counts.
@@ -343,6 +414,7 @@ def _match_by_vector(scope, text, floor) -> dict:
 
 __all__ = [
     "PREFIX_SCORE",
+    "children_function",
     "describe_function",
     "match_function",
     "resolve_function",

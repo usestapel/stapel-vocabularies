@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "vocabularies.children",
+  "description": "One page of the terms at a level, optionally only the ones a parent term scopes. This object validates the request payload; the response shape ({results, truncated}) is documented in $defs.Page. The comm half of the term listing the picker walks over HTTP — the question a caller asks when it has no code to name and no person to show a list to.",
+  "type": "object",
+  "required": ["vocabulary", "level"],
+  "properties": {
+    "vocabulary": { "type": "string", "maxLength": 64, "description": "Slug of the vocabulary." },
+    "level": { "type": "string", "maxLength": 64, "description": "Level to list. An unknown level answers null, never an empty page." },
+    "parent": {
+      "type": ["object", "null"],
+      "description": "When given, only the terms this parent scopes are listed. A parent that names no term scopes NOTHING and answers an empty page — never the whole level.",
+      "required": ["level", "code"],
+      "properties": {
+        "level": { "type": "string", "maxLength": 64 },
+        "code": { "type": "string", "maxLength": 128 }
+      },
+      "additionalProperties": false
+    },
+    "limit": {
+      "type": ["integer", "null"],
+      "description": "Page size, clamped to 1..MAX_PAGE_SIZE (default DEFAULT_PAGE_SIZE).",
+      "minimum": 1
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Page": {
+      "type": "object",
+      "description": "The response.",
+      "required": ["results", "truncated"],
+      "properties": {
+        "results": {
+          "type": "array",
+          "description": "The terms, in the level's own order (popular band first).",
+          "items": {
+            "type": "object",
+            "required": ["code", "label"],
+            "properties": {
+              "code": { "type": "string" },
+              "label": { "type": "string" }
+            }
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "Whether the level (or the parent's children) holds more than this page. Load-bearing for a caller that reasons ABOUT the set rather than picking from it: a page cut short can make a value look unique when it is not, and page length alone cannot tell a full page from a complete one."
+        }
+      }
+    }
+  }
+}

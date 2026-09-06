@@ -75,6 +75,7 @@ carry it. A load bumps it exactly once per file, and so does a
 | `vocabulary.changed` | comm event | `events.py` | how a consumer learns a catalogue was re-imported |
 | `vocabularies.resolve` / `vocabularies.describe` | comm functions | `functions.py` | how a service without the tables asks about codes it already has |
 | `vocabularies.match` | comm function | `functions.py` | how a caller with no code at all resolves one free-text guess — scored, thresholded, refusable |
+| `vocabularies.children` | comm function | `functions.py` | how a caller with no code and no person to show a list to asks what the choices under one term ARE — a page, with `truncated`, so a caller reasoning about the set cannot mistake a cut-short page for a complete one |
 | `vocabularies.set_popularity` | comm function | `functions.py` / `ranking.py` | how the host that owns the listings pushes the observed counts the popular band is built from |
 | `STAPEL_VOCABULARIES["POPULAR_BAND_SIZE"]` | integer | `conf.py` | how many terms of a level may sit in the popular band, on the write side and on the wire |
 | `STAPEL_VOCABULARIES["MATCH_MIN_SCORE"]` | float | `conf.py` | the floor `vocabularies.match` refuses below (default 0.8) |

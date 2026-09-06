@@ -4,6 +4,42 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
+## [Unreleased]
+
+### Added — `vocabularies.children`, the read a caller makes when nobody is looking
+
+The comm half of the term listing the picker already walks over HTTP, and the
+third question a caller with no code can ask. `describe` says what the levels
+are; `resolve` and `match` answer about codes a caller already holds or can
+spell; this one answers **what the choices HERE are**, which is what a caller
+needs when it is not a person choosing from a dropdown.
+
+It exists because a consumer had to reason ABOUT a set rather than pick from
+it. A fleet's listing assistant settles a car's generation — a thing no
+photograph shows — by asking which generation of the resolved model has the
+seller's year in its year set. Every part of that question was already in this
+store, and there was no way to ask it without the tables: `resolve` tests codes
+you can name, and the codes of a model's generations are exactly what the
+caller cannot name.
+
+- `{vocabulary, level, parent?, limit?} -> {results: [{code, label}], truncated}
+  | null`. `null` for an unknown vocabulary or level, the way `describe` and
+  `set_popularity` already say "no such thing" — a caller asking at a level a
+  re-import renamed must not read an empty page as "this parent has no
+  children".
+- A `parent` that names no term scopes **nothing**, and answers an empty page
+  rather than the whole level. Same rule as `_match_scope`, same reason: an
+  unscoped level is how a value from under the wrong parent gets written into
+  a listing.
+- **`truncated` is the load-bearing field.** A caller that reasons about the
+  set (is there exactly ONE generation holding this year?) draws a wrong
+  conclusion from a page the store cut short, and page length alone cannot
+  tell a full page from a complete one. It is answered by fetching one row
+  more than asked for and not returning it — no second `COUNT` over the same
+  set.
+
+Additive: no migration, no change to any existing answer.
+
 ## [0.2.0] — 2026-09-03
 
 **Minor, because the default order of every term page changes and every row
