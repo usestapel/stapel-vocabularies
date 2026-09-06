@@ -1,6 +1,6 @@
 {
   "module": "stapel-vocabularies",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "provides": "Reference vocabularies too large to inline into a category's feature schema — 14 962 phone models, 107 049 car modifications — stored as levels, terms and parent/child edges rather than as paths, so one 'black' is shared by every model that comes in black and can be translated once and faceted on. Ships the public typeahead and cascade reads a listing composer needs (ETag'd on a revision, anonymous, no cookie), the two VocabularyResolver implementations stapel-attributes' ref_select / ref_hierarchical_select types validate values through (in-process and over comm), a batched transactional loader for reviewed fixtures that spends one revision and one event per file, and Django-free converters that turn a vendor's nested XML or CSV catalogue into such a fixture without loading the document into memory.",
   "axes": [
     {
@@ -34,6 +34,11 @@
       "name": "vocabularies.describe",
       "kind": "comm_function",
       "summary": "One vocabulary's level structure and its current revision. The revision is what lets a remote resolver cache the answer and know when a re-imported catalogue made it stale."
+    },
+    {
+      "name": "vocabularies.children",
+      "kind": "comm_function",
+      "summary": "One page of the terms at a level, optionally scoped to a parent term — the question a caller asks when it has no code to name and no person to show a dropdown to, such as a listing assistant inferring a car's generation from the model and year a photo cannot show."
     },
     {
       "name": "vocabulary.changed",

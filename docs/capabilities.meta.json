@@ -36,6 +36,11 @@
       "summary": "One vocabulary's level structure and its current revision. The revision is what lets a remote resolver cache the answer and know when a re-imported catalogue made it stale."
     },
     {
+      "name": "vocabularies.children",
+      "kind": "comm_function",
+      "summary": "One page of the terms at a level, optionally scoped to a parent term — the question a caller asks when it has no code to name and no person to show a dropdown to, such as a listing assistant inferring a car's generation from the model and year a photo cannot show."
+    },
+    {
       "name": "vocabulary.changed",
       "kind": "comm_event",
       "summary": "A catalogue was re-imported: everything cached by this vocabulary's revision is stale. Emitted once per loaded file, inside the load's transaction, so a load that rolled back never announces itself."

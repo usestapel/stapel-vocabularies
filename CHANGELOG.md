@@ -4,7 +4,7 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
-## [Unreleased]
+## [0.2.1] — 2026-09-06
 
 ### Added — `vocabularies.children`, the read a caller makes when nobody is looking
 
