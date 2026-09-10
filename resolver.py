@@ -7,8 +7,14 @@ two shapes:
   ``AppConfig.ready()`` unless ``STAPEL_VOCABULARIES["REGISTER_RESOLVER"]``
   says otherwise.
 * ``CommResolver`` — for a service that validates ``ref_select`` values but
-  holds no vocabulary tables. Points at the two comm Functions; a host puts
-  its dotted path in ``STAPEL_ATTRIBUTES["VOCABULARY_RESOLVER"]``.
+  holds no vocabulary tables. Points at the comm Functions; a host puts its
+  dotted path in ``STAPEL_ATTRIBUTES["VOCABULARY_RESOLVER"]``.
+
+Both also answer ``terms(vocabulary, level)``, which the protocol does NOT
+declare — the OPTIONAL listing reader stapel-categories (>= 0.22) generates a
+category's virtual children with. Both go through ``level_terms()``, so the
+two implementations cannot answer "what are this category's children"
+differently.
 
 Both cache ``describe`` **by revision**, never by wall clock alone: a level
 list is read on every config validation, and a re-imported catalogue must stop
@@ -23,11 +29,14 @@ dataclasses, so importing this module costs nothing and a checkout without the
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
-from typing import Dict, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from .conf import number
+
+logger = logging.getLogger(__name__)
 
 
 def _types():
@@ -52,6 +61,106 @@ def _build_info(slug: str, levels):
             for level in levels or []
         ),
     )
+
+
+#: ``(vocabulary, level)`` pairs whose size has already been reported. The cap
+#: is a property of the catalogue, not of the request, so saying so once per
+#: process is the whole signal — a tree read that draws a capped level draws it
+#: on every page view, and a log line per view buries the one that matters.
+_reported_caps = set()
+_reported_lock = threading.Lock()
+
+
+def _report_cap(vocabulary: str, level: str, cap: int) -> None:
+    key = (vocabulary, level)
+    with _reported_lock:
+        if key in _reported_caps:
+            return
+        _reported_caps.add(key)
+    logger.warning(
+        "vocabulary %r level %r holds more than STAPEL_VOCABULARIES"
+        "['TERMS_LIMIT'] (%d) terms; terms() answers the first %d. A level "
+        "this large is not a browse level — expand the category by a coarser "
+        "level instead.",
+        vocabulary,
+        level,
+        cap,
+        cap,
+    )
+
+
+def level_terms(
+    vocabulary: str,
+    level: str,
+    parent: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> Optional[Tuple[List[Tuple[str, str]], bool]]:
+    """``([(code, label)], truncated)`` for one level — or ``None``.
+
+    ONE implementation behind two shapes: the in-process ``terms()`` reader
+    and the ``vocabularies.terms`` Function that serves the same reader in a
+    service without the tables. Two copies of this query would be two answers
+    to "what are this category's children", and the whole point of the seam is
+    that a fleet cannot tell which side answered.
+
+    ``None`` — not an empty list — for an unknown vocabulary or an unknown
+    level, the way ``describe``, ``children`` and ``set_popularity`` already
+    say "no such thing". The distinction is kept HERE and flattened by each
+    caller that has to flatten it (``terms()`` answers ``[]``, because its
+    consumer reads "no values" from anything else).
+
+    Order is the level's own — ``Term.Meta.ordering``: the popular band
+    first, then the fixture's curated rank, then the label. A deployment that
+    has promoted nothing gets the alphabet, which is what "the vocabulary's
+    own order, and its labels when it has none" means.
+
+    ``parent`` is a term CODE at the level above ``level`` (the level chain
+    says which), not a level/code pair: the caller browsing a hierarchy holds
+    the code it descended through and nothing else. A parent naming no term —
+    and any parent at all on a root level — scopes NOTHING and answers an
+    empty list rather than the whole level, the rule ``_match_scope`` and
+    ``children_function`` already state.
+    """
+    from .models import Term, Vocabulary
+
+    row = (
+        Vocabulary.objects.filter(slug=vocabulary).values("id", "levels").first()
+    )
+    if row is None:
+        return None
+    levels = row["levels"] or []
+    if level not in [entry["name"] for entry in levels]:
+        return None
+
+    terms = Term.objects.filter(vocabulary_id=row["id"], level=level)
+    if parent not in (None, ""):
+        parent_level = None
+        for entry in levels:
+            if entry["name"] == level:
+                parent_level = entry.get("parent")
+                break
+        if not parent_level:
+            return [], False
+        parent_id = (
+            Term.objects.filter(
+                vocabulary_id=row["id"], level=parent_level, code=parent
+            )
+            .values_list("id", flat=True)
+            .first()
+        )
+        if parent_id is None:
+            return [], False
+        terms = terms.filter(parent_edges__parent_id=parent_id)
+
+    cap = number("TERMS_LIMIT")
+    wanted = cap if limit is None else max(1, min(int(limit), cap))
+    # One row more than asked for, never returned: `truncated` without a
+    # second COUNT over the same set (`children_function`'s trick).
+    rows = list(terms.values_list("code", "label")[: wanted + 1])
+    truncated = len(rows) > wanted
+    if truncated and wanted == cap:
+        _report_cap(vocabulary, level, cap)
+    return [(code, label) for code, label in rows[:wanted]], truncated
 
 
 class OrmResolver:
@@ -121,6 +230,45 @@ class OrmResolver:
             vocabulary__slug=vocabulary, level=level, code__in=wanted
         ).values_list("code", "label")
         return dict(rows)
+
+    # --- the optional listing reader ---------------------------------------
+
+    def terms(
+        self,
+        vocabulary: str,
+        level: str,
+        *,
+        parent: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Tuple[str, str]]:
+        """``[(code, label)]`` of one level — the reader ``VocabularyResolver``
+        does not declare.
+
+        The protocol is four questions about ONE code, deliberately: listing
+        belongs to the HTTP surface a typeahead talks to. But a category whose
+        ``children_expand_by`` names a ``ref_select`` feature has no code to
+        ask about — its children ARE the level — and stapel-categories
+        (>= 0.22) reads that through this OPTIONAL method, drawing no virtual
+        children at all when the registered resolver lacks it. This is that
+        method; adding it is what turns those categories from empty into a
+        branch.
+
+        Labels are the ``label`` column, exactly as ``labels()`` resolves
+        them — one language question, answered in one place. A caller wanting
+        a translated set asks the HTTP surface, which takes
+        ``Accept-Language``.
+
+        ``[]`` for an unknown vocabulary or level, and never a raise: the
+        consumer treats a raise as "no values" while logging a traceback per
+        tree read, so an honest empty list is the only useful answer to a
+        question about a catalogue this deployment does not have.
+
+        Capped at ``STAPEL_VOCABULARIES["TERMS_LIMIT"]`` (2000): over it the
+        first N come back and the level is reported once. A level larger than
+        the cap is not a browse level.
+        """
+        answer = level_terms(vocabulary, level, parent=parent, limit=limit)
+        return [] if answer is None else answer[0]
 
 
 class CommResolver:
@@ -228,6 +376,37 @@ class CommResolver:
         )
         return dict((answer or {}).get("labels") or {})
 
+    # --- the optional listing reader ---------------------------------------
+
+    def terms(
+        self,
+        vocabulary: str,
+        level: str,
+        *,
+        parent: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Tuple[str, str]]:
+        """``[(code, label)]`` of one level, over the bus.
+
+        The same answer ``OrmResolver.terms`` gives, through
+        ``vocabularies.terms`` — see it for the contract. Not cached: a
+        describe is a shape that changes once per import, a level's term list
+        is the body of a page, and this reader is called behind a tree read
+        that has its own ETag.
+
+        The Function's ``null`` for an unknown vocabulary or level flattens to
+        ``[]`` here, so both implementations answer a consumer that reads
+        anything but a list of pairs as "no values" the same way.
+        """
+        payload = {"vocabulary": vocabulary, "level": level}
+        if parent not in (None, ""):
+            payload["parent"] = str(parent)
+        if limit is not None:
+            payload["limit"] = int(limit)
+        answer = self._call("vocabularies.terms", payload)
+        rows = (answer or {}).get("terms") or []
+        return [(str(code), str(label)) for code, label in rows]
+
 
 def register_orm_resolver() -> Optional[OrmResolver]:
     """Hand stapel-attributes the in-process resolver.
@@ -247,4 +426,9 @@ def register_orm_resolver() -> Optional[OrmResolver]:
     return resolver
 
 
-__all__ = ["CommResolver", "OrmResolver", "register_orm_resolver"]
+__all__ = [
+    "CommResolver",
+    "OrmResolver",
+    "level_terms",
+    "register_orm_resolver",
+]

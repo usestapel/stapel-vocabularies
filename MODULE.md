@@ -76,9 +76,11 @@ carry it. A load bumps it exactly once per file, and so does a
 | `vocabularies.resolve` / `vocabularies.describe` | comm functions | `functions.py` | how a service without the tables asks about codes it already has |
 | `vocabularies.match` | comm function | `functions.py` | how a caller with no code at all resolves one free-text guess — scored, thresholded, refusable |
 | `vocabularies.children` | comm function | `functions.py` | how a caller with no code and no person to show a list to asks what the choices under one term ARE — a page, with `truncated`, so a caller reasoning about the set cannot mistake a cut-short page for a complete one |
+| `vocabularies.terms` | comm function | `functions.py` / `resolver.py` | how a caller that RENDERS a level gets it whole — `(code, label)` pairs in the level's own order, capped at `TERMS_LIMIT`. What `CommResolver.terms` is, and therefore what a category expanded by a `ref_select` feature draws its children from |
 | `vocabularies.set_popularity` | comm function | `functions.py` / `ranking.py` | how the host that owns the listings pushes the observed counts the popular band is built from |
 | `STAPEL_VOCABULARIES["POPULAR_BAND_SIZE"]` | integer | `conf.py` | how many terms of a level may sit in the popular band, on the write side and on the wire |
 | `STAPEL_VOCABULARIES["MATCH_MIN_SCORE"]` | float | `conf.py` | the floor `vocabularies.match` refuses below (default 0.8) |
+| `STAPEL_VOCABULARIES["TERMS_LIMIT"]` | integer | `conf.py` | how many terms of one level the browse read (`terms()` / `vocabularies.terms`) may hand back at once (default 2000) — a level bigger than this is not a browse level |
 
 There is deliberately **no** parser registry and **no** pluggable code
 generator. A term code is a persisted listing value: making the slugger
@@ -159,6 +161,50 @@ dataclasses. Importing this module therefore costs nothing and does not turn a
 dependency-floor violation into an ImportError at Django startup — system
 check `stapel_vocabularies.W001` reports that deployment instead, naming the
 release to install.
+
+### `terms()` — the reader the protocol does not declare
+
+`VocabularyResolver` is four questions about ONE code, deliberately: listing
+belongs to the HTTP surface a typeahead talks to. But a category whose
+`children_expand_by` names a `ref_select` feature has no code to ask about —
+**its children ARE the level** — and stapel-categories (>= 0.22) reads that
+through an OPTIONAL `terms(vocabulary, level)` on whatever resolver is
+registered, drawing no virtual children when the resolver has no such method.
+Six leaves on a live stand were exactly that: expansion configured, vocabulary
+loaded, feature right, and an empty tree, because up to 0.2.1 this module
+offered only `describe` / `exists` / `is_child` / `labels`.
+
+Both resolvers answer it now, and both go through `level_terms()` so the two
+cannot disagree about what a category's children are:
+
+```
+terms(vocabulary, level, *, parent=None, limit=None) -> [(code, label)]
+```
+
+- **Order is the level's own** (`Term.Meta.ordering`: popular band, curated
+  `sort`, then label) — a deployment that promoted nothing gets the alphabet.
+- **`parent` is a bare CODE** at the level above, not a `{level, code}` pair:
+  the browser holds the code it descended through, and the level chain says
+  the rest. A parent naming no term — and any parent on a root level — scopes
+  **nothing**, never the whole level.
+- **`[]`, never a raise**, for an unknown vocabulary or level. The consumer
+  reads a raise as "no values" while logging a traceback per tree read, so the
+  empty list is the same outcome told honestly. (`level_terms()` keeps the
+  `None` distinction; `terms()` is where it is flattened.)
+- **Capped at `TERMS_LIMIT`** (2000, `conf.py`), reported once per level. A
+  level larger than the cap **is not a browse level** — put a coarser level
+  above it and expand the category by that one.
+
+`vocabularies.terms` is the same read over comm, and is **not**
+`vocabularies.children` with a bigger number: `children` is a typeahead-sized
+page (`MAX_PAGE_SIZE`, 200) for a caller reasoning ABOUT a set; this is the
+level itself for a caller RENDERING it. One cap cannot serve a dropdown and a
+tile grid, and the smaller of the two would win silently.
+
+`tests/test_branching.py` pins the whole rung across the two libraries, out of
+process (`tests/branching_harness.py` says why): the same category, once
+against a resolver with only the four protocol methods (no children — the
+live defect) and once against `OrmResolver` (one virtual child per term).
 
 ## 6. Loading
 
@@ -258,9 +304,10 @@ views.py         four reads, ETag/Cache-Control, Accept-Language
 urls.py/_v1.py   /vocabularies/api/v1/, GATE_REGISTRY
 serializers.py   response shapes (SerializerSeamMixin seams)
 errors.py        the three i18n keys
-functions.py     vocabularies.resolve / describe / match / set_popularity (+ schemas/functions/)
+functions.py     vocabularies.resolve / describe / children / terms / match /
+                 set_popularity (+ schemas/functions/)
 events.py        vocabulary.changed (+ schemas/emits/)
-resolver.py      OrmResolver, CommResolver, register_orm_resolver
+resolver.py      OrmResolver, CommResolver, level_terms, register_orm_resolver
 loader.py        load_fixture / load_files / validate_fixture
 convert.py       nested_xml_to_fixture, csv_to_fixture, dump_fixture   (Django-free)
 slug.py          slugify_term, dedupe_codes                            (Django-free)

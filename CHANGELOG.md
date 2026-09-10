@@ -4,6 +4,72 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
+## [0.3.0] — 2026-09-10
+
+**Minor, because a whole class of category now answers with children it did
+not answer with before.** Nothing existing changed shape; what changed is that
+`children_expand_by` over a `ref_select` feature stops being inert.
+
+### Added — `terms()`, the reader a category's children are drawn from
+
+stapel-categories (>= 0.22) generates a node's children from one of its own
+features: a branch that would be four hundred rows named after four hundred
+option codes is one column instead. For a closed `select` it reads the options
+off the feature. For a `ref_select` the values live in a vocabulary, and
+`VocabularyResolver` — four questions about ONE code — cannot list a level, so
+the consumer calls an OPTIONAL `terms(vocabulary, level)` and draws **nothing**
+when the registered resolver has no such method.
+
+Up to 0.2.1 this module's resolvers offered `describe` / `exists` / `is_child`
+/ `labels`. On a client stand that meant six leaves — cars by make, phones and
+laptops by vendor, tyres by brand, vacancies by industry — with the expansion
+configured, the catalogue loaded, the feature right, and an empty tree.
+
+- **`OrmResolver.terms(vocabulary, level, *, parent=None, limit=None)`** →
+  `[(code, label)]` in the level's own order (`Term.Meta.ordering`: popular
+  band, curated `sort`, then label — the alphabet where nothing is promoted).
+  Labels are resolved exactly as `labels()` resolves them.
+- **`parent` is a bare term CODE** at the level above (`Make` → `Model`), not
+  a `{level, code}` pair: the caller browsing a hierarchy holds the code it
+  descended through and the level chain says the rest. A parent that names no
+  term — and any parent at all on a root level — scopes **nothing**, never the
+  whole level.
+- **An unknown vocabulary or level answers `[]`, and never raises.** The
+  consumer reads a raise as "no values" while logging a traceback per tree
+  read; the empty list is the same outcome, told honestly.
+- **`STAPEL_VOCABULARIES["TERMS_LIMIT"]` (new, default 2000)** caps it: over
+  the cap the first N come back and the level is logged ONCE per process. A
+  level larger than the cap is **not a browse level** — the fix is a coarser
+  level above it, not a bigger number.
+- **`CommResolver.terms(...)`** answers identically through the new
+  `vocabularies.terms` Function, so a service without the tables draws the
+  same tree as the service with them.
+
+### Added — the `vocabularies.terms` Function
+
+`{vocabulary, level, parent?, limit?} -> {terms: [[code, label], ...],
+truncated} | null`, schema committed in `schemas/functions/`. `null` for an
+unknown vocabulary or level, like `describe` and `children`.
+
+Not `vocabularies.children` with a bigger number, though they read the same
+table: `children` is a PAGE for a caller reasoning about a set — capped at
+`MAX_PAGE_SIZE` (200), a typeahead's size — and this is the level itself for a
+caller RENDERING it. One cap cannot serve a dropdown and a tile grid, and the
+smaller of the two would have won silently.
+
+Both shapes go through one `resolver.level_terms()`, so the in-process reader
+and the comm Function cannot disagree about what a category's children are.
+
+### Tests
+
+`tests/test_branching.py` pins the rung across both libraries, out of process
+(stapel-categories is an optional consumer and must not enter this module's
+settings block): the same category asked twice, once against a resolver
+carrying only the four protocol methods — no children, the live defect — and
+once against `OrmResolver`, one virtual child per term.
+
+Additive on the wire: no migration, no change to any existing answer.
+
 ## [0.2.1] — 2026-09-06
 
 ### Added — `vocabularies.children`, the read a caller makes when nobody is looking

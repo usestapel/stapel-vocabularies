@@ -1,6 +1,6 @@
 """comm surface of stapel-vocabularies (spec §3.3).
 
-Four Functions, each carrying a JSON schema in ``schemas/`` — tests run with
+Five Functions, each carrying a JSON schema in ``schemas/`` — tests run with
 ``VALIDATE_SCHEMAS`` on, so a payload drifting from its schema fails loudly.
 Registration happens on import from ``apps.py:ready()``.
 
@@ -20,6 +20,15 @@ protocol. Both take codes a caller already has.
     call("vocabularies.describe", {"vocabulary": "phone-models"})
     # -> {"slug": "phone-models", "levels": [{"name": "Vendor", "parent": None}, ...],
     #     "revision": 7}
+
+``vocabularies.terms`` is the BROWSE read: a whole level as ``(code, label)``
+pairs, for a caller that RENDERS the set rather than picking from it — a
+category expanded into one child per term. See ``terms_function`` for why it
+is not ``children`` with a bigger cap.
+
+    call("vocabularies.terms", {"vocabulary": "phone-models", "level": "Vendor"})
+    # -> {"terms": [["apple", "Apple"], ["samsung", "Samsung"], ...],
+    #     "truncated": False}
 
 The other two are the ones a caller with no code uses. ``match`` turns one
 free-text guess into one code or an explicit refusal; ``set_popularity``
@@ -214,6 +223,49 @@ def children_function(payload: dict) -> dict:
         ],
         "truncated": len(rows) > limit,
     }
+
+
+@function("vocabularies.terms", schema=_schema("vocabularies.terms"))
+def terms_function(payload: dict) -> dict:
+    """A whole level's terms as ``(code, label)`` pairs — the BROWSE read.
+
+    The comm half of ``resolver.terms()``, so a service that holds no
+    vocabulary tables draws the same category children as the service that
+    does. stapel-categories (>= 0.22) expands a category whose
+    ``children_expand_by`` names a ``ref_select`` feature into one virtual
+    child per term of that feature's level; ``CommResolver`` answers that
+    through here.
+
+    Not a second ``vocabularies.children``, though they read the same table.
+    ``children`` is a PAGE for a caller that reasons about a set — capped at
+    ``MAX_PAGE_SIZE`` (200), the size of a typeahead, with the parent named as
+    a ``{level, code}`` pair. This one is the whole level for a caller that
+    RENDERS it — capped at ``TERMS_LIMIT`` (2000), because a 529-vendor level
+    that arrives 200 at a time is a tree that lies about what is in it, and it
+    takes the parent as the bare code a browser descended through. Merging
+    them would mean one cap serving a dropdown and a catalogue page, and the
+    smaller of the two would win silently.
+
+    ``null`` for an unknown vocabulary or level, like ``describe`` and
+    ``children``; ``CommResolver.terms`` flattens that to ``[]`` for the
+    consumer that cannot tell the difference anyway.
+
+    ``truncated`` says the level is bigger than what came back. It is not
+    pagination — there is no cursor, deliberately — it is the browse read
+    admitting that a level of this size should not be a browse level.
+    """
+    from .resolver import level_terms
+
+    answer = level_terms(
+        payload["vocabulary"],
+        payload["level"],
+        parent=payload.get("parent"),
+        limit=payload.get("limit"),
+    )
+    if answer is None:
+        return None
+    rows, truncated = answer
+    return {"terms": [[code, label] for code, label in rows], "truncated": truncated}
 
 
 @function("vocabularies.set_popularity", schema=_schema("vocabularies.set_popularity"))
@@ -419,4 +471,5 @@ __all__ = [
     "match_function",
     "resolve_function",
     "set_popularity_function",
+    "terms_function",
 ]

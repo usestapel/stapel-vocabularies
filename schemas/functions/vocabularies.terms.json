@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "vocabularies.terms",
+  "description": "A whole level's terms as (code, label) pairs — the BROWSE read behind resolver.terms(), which stapel-categories expands a category's children from. This object validates the request payload; the response shape ({terms, truncated}) is documented in $defs.Terms, and an unknown vocabulary or level answers null. Not vocabularies.children with a bigger number: children is a PAGE for a caller reasoning about a set (MAX_PAGE_SIZE, a typeahead's size, parent named as a {level, code} pair); this is the whole level for a caller RENDERING it (TERMS_LIMIT, parent given as the bare code it descended through).",
+  "type": "object",
+  "required": ["vocabulary", "level"],
+  "properties": {
+    "vocabulary": { "type": "string", "maxLength": 64, "description": "Slug of the vocabulary." },
+    "level": { "type": "string", "maxLength": 64, "description": "Level to list. An unknown level answers null, never an empty list." },
+    "parent": {
+      "type": ["string", "null"],
+      "maxLength": 128,
+      "description": "A term CODE at the level ABOVE this one — the code a browser descended through, which is all it holds. When given, only the terms this parent scopes are listed. A parent that names no term scopes NOTHING and answers an empty list, never the whole level; so does any parent at all on a root level."
+    },
+    "limit": {
+      "type": ["integer", "null"],
+      "description": "How many terms to answer, clamped to 1..TERMS_LIMIT (default TERMS_LIMIT).",
+      "minimum": 1
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "Terms": {
+      "type": "object",
+      "description": "The response.",
+      "required": ["terms", "truncated"],
+      "properties": {
+        "terms": {
+          "type": "array",
+          "description": "The terms as [code, label] pairs, in the level's own order (popular band first, then the curated rank, then the label).",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [{ "type": "string" }, { "type": "string" }]
+          }
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "Whether the level holds more terms than came back. Not a cursor and deliberately not paginated: it is the browse read admitting that a level over TERMS_LIMIT should not be a browse level at all — put a coarser level above it and expand the category by that."
+        }
+      }
+    }
+  }
+}

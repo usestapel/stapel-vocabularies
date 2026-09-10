@@ -187,6 +187,60 @@ def test_a_page_that_was_cut_short_says_so(phones):
     assert answer["truncated"] is True
 
 
+# --- terms ------------------------------------------------------------------
+
+
+def test_terms_answers_the_whole_level_as_pairs(makes):
+    """The browse read: pairs, in the vocabulary's own order, not a page."""
+    answer = call("vocabularies.terms", {"vocabulary": "makes", "level": "Make"})
+    assert answer == {
+        "terms": [["charlie", "Charlie"], ["alfa", "Alfa"], ["bravo", "Bravo"]],
+        "truncated": False,
+    }
+
+
+def test_terms_takes_the_parent_as_the_bare_code(makes):
+    """Not a {level, code} pair like `children`: a browser holds the code it
+    descended through, and the level chain already says what level that is."""
+    answer = call(
+        "vocabularies.terms",
+        {"vocabulary": "makes", "level": "Model", "parent": "alfa"},
+    )
+    assert answer["terms"] == [["alfa-one", "Alfa One"], ["alfa-two", "Alfa Two"]]
+    assert answer["truncated"] is False
+
+
+def test_terms_of_an_unknown_vocabulary_or_level_is_none(makes):
+    """`null`, like `describe` and `children` — the resolver flattens it to an
+    empty list for the consumer that cannot tell the difference."""
+    assert call("vocabularies.terms", {"vocabulary": "nope", "level": "Make"}) is None
+    assert call("vocabularies.terms", {"vocabulary": "makes", "level": "Gone"}) is None
+
+
+def test_terms_says_when_the_level_was_cut_short(makes):
+    """`truncated` is the browse read admitting the level is too big to be a
+    browse level — a tile grid that silently stops is a tree that lies."""
+    answer = call(
+        "vocabularies.terms", {"vocabulary": "makes", "level": "Make", "limit": 2}
+    )
+    assert len(answer["terms"]) == 2
+    assert answer["truncated"] is True
+
+
+def test_the_terms_payload_is_held_to_its_schema(makes):
+    """`parent` here is a string; the {level, code} object `children` takes is
+    a different question and must not validate against this one."""
+    with pytest.raises(Exception):
+        call(
+            "vocabularies.terms",
+            {
+                "vocabulary": "makes",
+                "level": "Model",
+                "parent": {"level": "Make", "code": "alfa"},
+            },
+        )
+
+
 # --- the event --------------------------------------------------------------
 
 
@@ -207,7 +261,12 @@ def test_the_emit_schema_is_committed():
 
 @pytest.mark.parametrize(
     "name",
-    ["vocabularies.resolve", "vocabularies.describe", "vocabularies.children"],
+    [
+        "vocabularies.resolve",
+        "vocabularies.describe",
+        "vocabularies.children",
+        "vocabularies.terms",
+    ],
 )
 def test_every_function_carries_its_schema(name):
     schema = json.loads(

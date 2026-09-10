@@ -76,6 +76,104 @@ def test_labels_omits_what_it_does_not_know(resolver, phones):
     assert resolver.labels("phones", "Model", []) == {}
 
 
+# --- terms: the optional listing reader -------------------------------------
+
+
+def test_terms_lists_a_level_in_the_vocabularys_own_order(resolver, makes):
+    """The fixture's order, not the alphabet — `charlie` was written first.
+
+    A browse expansion draws one tile per pair in the order it gets them, so
+    "whatever order the catalogue defines" has to survive the read intact.
+    """
+    assert resolver.terms("makes", "Make") == [
+        ("charlie", "Charlie"),
+        ("alfa", "Alfa"),
+        ("bravo", "Bravo"),
+    ]
+
+
+def test_terms_scopes_a_hierarchical_level_to_its_parent(resolver, makes):
+    """Make -> Model: the second level is only answerable under a parent."""
+    assert resolver.terms("makes", "Model", parent="alfa") == [
+        ("alfa-one", "Alfa One"),
+        ("alfa-two", "Alfa Two"),
+    ]
+    assert resolver.terms("makes", "Model", parent="bravo") == [
+        ("bravo-one", "Bravo One")
+    ]
+    # Unscoped, the level is the whole level.
+    assert len(resolver.terms("makes", "Model")) == 3
+
+
+def test_a_parent_that_names_no_term_scopes_nothing(resolver, makes):
+    """Never the whole level: an unscoped level under a parent that is not
+    there is how a value from under the wrong parent reaches a tile."""
+    assert resolver.terms("makes", "Model", parent="delta") == []
+
+
+def test_a_parent_on_a_root_level_scopes_nothing(resolver, makes):
+    """`Make` hangs off nothing, so no code can scope it — and answering the
+    whole level would silently ignore what the caller asked for."""
+    assert resolver.terms("makes", "Make", parent="alfa") == []
+
+
+def test_terms_of_an_unknown_vocabulary_or_level_is_empty_not_a_raise(resolver, makes):
+    """The consumer reads a raise as "no values" while logging a traceback per
+    tree read. An empty list is the same outcome, honestly."""
+    assert resolver.terms("nope", "Make") == []
+    assert resolver.terms("makes", "Gone") == []
+
+
+def test_terms_stops_at_the_hard_cap(resolver, makes, settings):
+    """TERMS_LIMIT is a ceiling on the BROWSE read, not a page size: over it
+    the first N come back rather than an error or the whole catalogue."""
+    settings.STAPEL_VOCABULARIES = {"TERMS_LIMIT": 2}
+    assert resolver.terms("makes", "Make") == [("charlie", "Charlie"), ("alfa", "Alfa")]
+
+
+def test_an_explicit_limit_cannot_raise_the_cap(resolver, makes, settings):
+    settings.STAPEL_VOCABULARIES = {"TERMS_LIMIT": 1}
+    assert resolver.terms("makes", "Make", limit=50) == [("charlie", "Charlie")]
+
+
+def test_the_cap_is_reported_once_per_level(makes, settings, caplog):
+    """A capped level is a property of the catalogue, not of the request: a
+    tree read draws it on every page view, and a line per view buries it."""
+    import logging
+
+    from stapel_vocabularies import resolver as resolver_module
+
+    settings.STAPEL_VOCABULARIES = {"TERMS_LIMIT": 1}
+    resolver_module._reported_caps.clear()
+    orm = OrmResolver()
+    with caplog.at_level(logging.WARNING, logger="stapel_vocabularies.resolver"):
+        orm.terms("makes", "Make")
+        orm.terms("makes", "Make")
+    lines = [record for record in caplog.records if "TERMS_LIMIT" in record.getMessage()]
+    assert len(lines) == 1
+
+
+def test_an_explicit_smaller_limit_is_not_a_capped_level(makes, settings, caplog):
+    """Asking for two of three is a caller paging, not a catalogue too big to
+    browse — reporting it would train everyone to ignore the report."""
+    import logging
+
+    from stapel_vocabularies import resolver as resolver_module
+
+    resolver_module._reported_caps.clear()
+    orm = OrmResolver()
+    with caplog.at_level(logging.WARNING, logger="stapel_vocabularies.resolver"):
+        assert len(orm.terms("makes", "Make", limit=2)) == 2
+    assert [r for r in caplog.records if "TERMS_LIMIT" in r.getMessage()] == []
+
+
+def test_both_resolvers_answer_terms_identically(makes):
+    """The seam's whole promise: a fleet cannot tell which side answered."""
+    assert OrmResolver().terms("makes", "Model", parent="alfa") == CommResolver().terms(
+        "makes", "Model", parent="alfa"
+    )
+
+
 # --- the describe cache -----------------------------------------------------
 
 

@@ -31,6 +31,13 @@ every form render, and it would be megabytes.
   actually reported. Below `MATCH_MIN_SCORE` it answers `{"matched": false}`.
   That is the difference between a typeahead, where a person picks one of five
   rows, and a composer, which writes the answer into a listing unread.
+- **A level a category can BE.** A node whose children are the 529 brands of
+  its `brand` field is 529 rows that carry nothing the field does not already
+  have. Point stapel-categories' `children_expand_by` at that feature and the
+  tree answers with one virtual child per term instead — no rows, no slugs,
+  each one carrying the filter the node already answers. That read is
+  `terms()` on the resolver (and `vocabularies.terms` over the bus): the
+  level whole, in its own order, capped at `TERMS_LIMIT`.
 - **Two resolvers, one protocol.** `ref_select` / `ref_hierarchical_select` in
   [stapel-attributes](https://github.com/usestapel/stapel-attributes) validate
   values through a `VocabularyResolver`. `OrmResolver` answers from these

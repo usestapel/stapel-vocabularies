@@ -1,8 +1,8 @@
-# stapel-vocabularies 0.2.1
+# stapel-vocabularies 0.3.0
 
 Reference vocabularies too large to inline into a category's feature schema — 14 962 phone models, 107 049 car modifications — stored as levels, terms and parent/child edges rather than as paths, so one 'black' is shared by every model that comes in black and can be translated once and faceted on. Ships the public typeahead and cascade reads a listing composer needs (ETag'd on a revision, anonymous, no cookie), the two VocabularyResolver implementations stapel-attributes' ref_select / ref_hierarchical_select types validate values through (in-process and over comm), a batched transactional loader for reviewed fixtures that spends one revision and one event per file, and Django-free converters that turn a vendor's nested XML or CSV catalogue into such a fixture without loading the document into memory.
 
-Contract: axes 1 · surface 13 · extension points 6 · operations 4 · error codes 45.
+Contract: axes 1 · surface 14 · extension points 7 · operations 4 · error codes 45.
 Generated from docs/capabilities.json by `stapel-llms-txt` — do not edit; drift-gated by `make contract-check`.
 
 ## Configuration axes — what a product switches on
@@ -13,6 +13,9 @@ Settings keys; `default` is what you get by saying nothing. Turning an axis off 
 ## Usage surface — call these before writing your own
 This is the answer to "does Stapel already have something for X?". `instead of` names the outside symbol this one displaces.
 ### gate_function
+- level_terms — stapel_vocabularies.resolver.level_terms
+  instead of: stapel_vocabularies.models.Term.objects.filter
+  The terms of one level as (code, label) pairs plus a `truncated` flag — the ONE query behind both the in-process resolver's terms() reader and the vocabularies.terms Function, and the read a browse expansion draws a category's children from. Reach for it when writing a second surface over a level (a sitemap, an export, a tile grid): a hand-rolled Term queryset loses the level's own order, the parent scoping a hierarchical level is only valid under, and the TERMS_LIMIT ceiling that keeps a 107 049-term level from being rendered as a page.
 - load_files — stapel_vocabularies.loader.load_files
   load_fixture over a list of files, each in its own transaction — the callable behind `manage.py load_vocabulary`, for a data migration or a deployment script that would otherwise shell out to a management command.
 - load_fixture — stapel_vocabularies.loader.load_fixture
@@ -55,6 +58,8 @@ This is the answer to "does Stapel already have something for X?". `instead of` 
   One vocabulary's level structure and its current revision. The revision is what lets a remote resolver cache the answer and know when a re-imported catalogue made it stale.
 - vocabularies.resolve [comm_function]
   Do these term codes exist, what are they called, and are they children of that term — the three questions validating a submitted ref_select value asks, answered in one round trip so a listing save does not cost three.
+- vocabularies.terms [comm_function]
+  A whole level's terms as (code, label) pairs — the browse read a category expanded by a ref_select feature draws one child per term from. Not vocabularies.children with a bigger number: children is a typeahead-sized page for a caller reasoning about a set, this is the level itself for a caller rendering it, and one cap cannot serve both.
 - vocabulary.changed [comm_event]
   A catalogue was re-imported: everything cached by this vocabulary's revision is stale. Emitted once per loaded file, inside the load's transaction, so a load that rolled back never announces itself.
 

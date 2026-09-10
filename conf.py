@@ -45,6 +45,17 @@ DEFAULTS = {
     "MAX_PAGE_SIZE": 200,
     # Default page size when the client does not ask.
     "DEFAULT_PAGE_SIZE": 50,
+    # Hard ceiling on the resolver's `terms()` reader and the
+    # `vocabularies.terms` Function: how many terms of one level a BROWSE
+    # caller may be handed at once. Deliberately far above MAX_PAGE_SIZE and
+    # deliberately finite. Above, because this is not a typeahead page: a
+    # category expanded by a `brand` feature draws one tile per term and a
+    # 529-vendor level must arrive whole or the tree lies about what is in
+    # it. Finite, because the same call against a 107 049-modification level
+    # would render a page nobody can use and stream the whole catalogue on
+    # every tree read. A level larger than this is NOT a browse level — put
+    # a coarser level above it and expand by that.
+    "TERMS_LIMIT": 2000,
     # Rows per bulk_create/bulk_update batch in load_vocabulary.
     "LOAD_BATCH_SIZE": 2000,
     # How many terms of one level may sit in the popular band: how many

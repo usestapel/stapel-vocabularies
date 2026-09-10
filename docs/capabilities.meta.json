@@ -41,6 +41,11 @@
       "summary": "One page of the terms at a level, optionally scoped to a parent term — the question a caller asks when it has no code to name and no person to show a dropdown to, such as a listing assistant inferring a car's generation from the model and year a photo cannot show."
     },
     {
+      "name": "vocabularies.terms",
+      "kind": "comm_function",
+      "summary": "A whole level's terms as (code, label) pairs — the browse read a category expanded by a ref_select feature draws one child per term from. Not vocabularies.children with a bigger number: children is a typeahead-sized page for a caller reasoning about a set, this is the level itself for a caller rendering it, and one cap cannot serve both."
+    },
+    {
       "name": "vocabulary.changed",
       "kind": "comm_event",
       "summary": "A catalogue was re-imported: everything cached by this vocabulary's revision is stale. Emitted once per loaded file, inside the load's transaction, so a load that rolled back never announces itself."
@@ -138,6 +143,13 @@
     "register_orm_resolver": {
       "kind": "gate_function",
       "intent": "Hand stapel-attributes the in-process resolver. Already called from AppConfig.ready() under the REGISTER_RESOLVER flag; call it directly only from a host that boots its apps unusually. Returns None where the installed stapel-attributes predates the protocol, which is the deployment stapel_vocabularies.W001 reports rather than crashing."
+    },
+    "level_terms": {
+      "kind": "gate_function",
+      "intent": "The terms of one level as (code, label) pairs plus a `truncated` flag — the ONE query behind both the in-process resolver's terms() reader and the vocabularies.terms Function, and the read a browse expansion draws a category's children from. Reach for it when writing a second surface over a level (a sitemap, an export, a tile grid): a hand-rolled Term queryset loses the level's own order, the parent scoping a hierarchical level is only valid under, and the TERMS_LIMIT ceiling that keeps a 107 049-term level from being rendered as a page.",
+      "instead_of": [
+        "stapel_vocabularies.models.Term.objects.filter"
+      ]
     }
   }
 }

@@ -61,6 +61,44 @@ def captured_events():
 
 
 @pytest.fixture
+def makes(db):
+    """A two-level vocabulary in a deliberately UNALPHABETICAL fixture order.
+
+    The shape a browse expansion walks: a category whose children ARE the
+    values of its ``make`` feature, and under each make its models. The rows
+    are laid out ``charlie, alfa, bravo`` on purpose — a reader that answers
+    them in that order is answering in the vocabulary's own order, and a
+    reader that sorts them is not.
+    """
+    from stapel_vocabularies.loader import load_fixture
+
+    load_fixture(
+        {
+            "slug": "makes",
+            "name": "Makes",
+            "source": "test",
+            "levels": [{"name": "Make"}, {"name": "Model", "parent": "Make"}],
+            "terms": [
+                ["Make", "charlie", "Charlie", None],
+                ["Make", "alfa", "Alfa", None],
+                ["Make", "bravo", "Bravo", None],
+                ["Model", "alfa-one", "Alfa One", None],
+                ["Model", "alfa-two", "Alfa Two", None],
+                ["Model", "bravo-one", "Bravo One", None],
+            ],
+            "edges": [
+                ["Make", "alfa", "Model", "alfa-one"],
+                ["Make", "alfa", "Model", "alfa-two"],
+                ["Make", "bravo", "Model", "bravo-one"],
+            ],
+        }
+    )
+    from stapel_vocabularies.models import Vocabulary
+
+    return Vocabulary.objects.get(slug="makes")
+
+
+@pytest.fixture
 def phones(db):
     """A small four-level vocabulary, the phone catalogue in miniature."""
     from stapel_vocabularies.loader import load_fixture
