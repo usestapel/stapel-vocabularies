@@ -99,6 +99,37 @@ def makes(db):
 
 
 @pytest.fixture
+def tints(db):
+    """A one-level vocabulary whose terms carry a source-owned hue.
+
+    The case ``Term.extra`` exists for: a facet over a colour level draws a
+    swatch, and the only thing that knows what colour ``ink`` names is the
+    catalogue the term came from. ``slate`` deliberately carries no bag at
+    all, so every reader has to answer a term without one as well as one
+    with it — and the rows state their own sort, so the order is the
+    catalogue's rather than the alphabet's.
+    """
+    from stapel_vocabularies.loader import load_fixture
+
+    load_fixture(
+        {
+            "slug": "tints",
+            "name": "Tints",
+            "source": "test",
+            "levels": [{"name": "Tint"}],
+            "terms": [
+                ["Tint", "ink", "Ink", None, 0, 0, {"hue": "#1a1a1a"}],
+                ["Tint", "snow", "Snow", None, 1, 0, {"hue": "#ffffff"}],
+                ["Tint", "slate", "Slate", None, 2],
+            ],
+        }
+    )
+    from stapel_vocabularies.models import Vocabulary
+
+    return Vocabulary.objects.get(slug="tints")
+
+
+@pytest.fixture
 def phones(db):
     """A small four-level vocabulary, the phone catalogue in miniature."""
     from stapel_vocabularies.loader import load_fixture

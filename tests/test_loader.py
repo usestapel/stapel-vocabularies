@@ -384,3 +384,102 @@ def test_the_rename_is_idempotent_on_a_second_load():
     load_fixture(moved)
     result = load_fixture(moved)
     assert (result.terms_created, result.terms_updated) == (0, 0)
+
+
+# --- the 7th column: the source catalogue's own bag --------------------------
+
+
+def test_a_term_row_may_carry_a_source_owned_bag():
+    """The optional 7th column, ``extra`` (stapel-vocabularies 0.4.0).
+
+    A colour term is the case that asked for it: a search facet draws a
+    swatch, and the only thing that knows «Ink» is ``#1a1a1a`` is the
+    catalogue the term came from. The loader writes it verbatim.
+    """
+    tinted = fixture()
+    tinted["levels"] = [{"name": "Tint"}]
+    tinted["terms"] = [["Tint", "ink", "Ink", None, 0, 0, {"hue": "#1a1a1a"}]]
+    tinted["edges"] = []
+    load_fixture(tinted)
+    assert Term.objects.get(code="ink").extra == {"hue": "#1a1a1a"}
+
+
+def test_a_row_without_the_bag_column_loads_exactly_as_before():
+    """Byte-compatible fixtures: every file written before 0.4.0 still loads.
+
+    Not "loads and gets a default" as an implementation detail — this is the
+    whole reason the column is optional. A 4-column row is still four
+    columns, and the term it makes carries an empty bag, not a null.
+    """
+    load_fixture(fixture())
+    assert [term.extra for term in Term.objects.all()] == [{}] * 4
+
+
+def test_a_second_file_merges_into_the_bag_rather_than_replacing_it():
+    """Two catalogues contribute to one vocabulary; neither erases the other.
+
+    That is what an additive load IS. The file that knows a hue is not
+    necessarily the file that knows the vendor's own code for the shade.
+    """
+    tinted = fixture()
+    tinted["levels"] = [{"name": "Tint"}]
+    tinted["terms"] = [["Tint", "ink", "Ink", None, 0, 0, {"hue": "#1a1a1a"}]]
+    tinted["edges"] = []
+    load_fixture(tinted)
+    second = json.loads(json.dumps(tinted))
+    second["terms"] = [["Tint", "ink", "Ink", None, 0, 0, {"pantone": "Black 6 C"}]]
+    load_fixture(second)
+    assert Term.objects.get(code="ink").extra == {
+        "hue": "#1a1a1a",
+        "pantone": "Black 6 C",
+    }
+
+
+def test_a_row_that_omits_the_bag_leaves_the_live_one_alone():
+    """A silent column states nothing, exactly as ``popularity`` does.
+
+    A re-import of a catalogue that never carried hues is not evidence that
+    the hues were withdrawn.
+    """
+    tinted = fixture()
+    tinted["levels"] = [{"name": "Tint"}]
+    tinted["terms"] = [["Tint", "ink", "Ink", None, 0, 0, {"hue": "#1a1a1a"}]]
+    tinted["edges"] = []
+    load_fixture(tinted)
+    silent = json.loads(json.dumps(tinted))
+    silent["terms"] = [["Tint", "ink", "Ink", None, 0, 0]]
+    result = load_fixture(silent)
+    assert result.terms_updated == 0
+    assert Term.objects.get(code="ink").extra == {"hue": "#1a1a1a"}
+
+
+def test_a_stated_key_overwrites_the_live_one():
+    tinted = fixture()
+    tinted["levels"] = [{"name": "Tint"}]
+    tinted["terms"] = [["Tint", "ink", "Ink", None, 0, 0, {"hue": "#1a1a1a"}]]
+    tinted["edges"] = []
+    load_fixture(tinted)
+    recoloured = json.loads(json.dumps(tinted))
+    recoloured["terms"] = [["Tint", "ink", "Ink", None, 0, 0, {"hue": "#000000"}]]
+    load_fixture(recoloured)
+    assert Term.objects.get(code="ink").extra == {"hue": "#000000"}
+
+
+@pytest.mark.parametrize("bag", [["#1a1a1a"], "#1a1a1a", 7])
+def test_a_bag_that_is_not_an_object_is_refused(bag):
+    """A bare value in the 7th column means a column this contract lacks."""
+    tinted = fixture()
+    tinted["levels"] = [{"name": "Tint"}]
+    tinted["terms"] = [["Tint", "ink", "Ink", None, 0, 0, bag]]
+    tinted["edges"] = []
+    with pytest.raises(FixtureError, match="extra"):
+        load_fixture(tinted)
+
+
+def test_an_eighth_column_is_refused():
+    tinted = fixture()
+    tinted["levels"] = [{"name": "Tint"}]
+    tinted["terms"] = [["Tint", "ink", "Ink", None, 0, 0, {}, "surplus"]]
+    tinted["edges"] = []
+    with pytest.raises(FixtureError):
+        load_fixture(tinted)

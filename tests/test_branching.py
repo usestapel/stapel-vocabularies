@@ -69,3 +69,22 @@ def test_terms_turns_an_expanded_category_into_a_branch(answers):
             "filter": {"make_ref": "bravo"},
         },
     ]
+
+
+def test_a_term_carrying_a_bag_still_draws_the_same_child(answers):
+    """0.4.0's own regression, across the seam it could have broken.
+
+    `charlie` carries `extra` in the harness fixture. The installed
+    stapel-categories is a 0.3.0-era reader that takes these rows apart
+    positionally, so if `terms()` had grown a third element to carry the bag,
+    this node would draw wrong — or raise. It draws exactly what it drew
+    before, and the bag reaches a renderer through `terms_with_extra()`
+    instead.
+    """
+    charlie = answers["with_terms"][0]
+    assert charlie == {
+        "name": "Charlie",
+        "value": "charlie",
+        "virtual": True,
+        "filter": {"make_ref": "charlie"},
+    }

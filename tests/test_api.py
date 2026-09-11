@@ -108,6 +108,49 @@ def test_terms_of_a_level(anonymous_client, phones):
     ]
 
 
+def test_a_term_page_carries_the_sources_own_bag(anonymous_client, tints):
+    """`extra` on the row — what the storefront's facet draws a swatch from.
+
+    The term that carries none omits the key entirely rather than shipping
+    `{}` on every row of a 2000-term page; a consumer reads absent and empty
+    the same way.
+    """
+    resp = anonymous_client.get(f"{BASE}/vocabularies/tints/terms/?level=Tint")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [row.get("extra") for row in body["results"]] == [
+        {"hue": "#1a1a1a"},
+        {"hue": "#ffffff"},
+        None,
+    ]
+    assert "extra" not in body["results"][-1]
+
+
+def test_a_level_with_no_source_attributes_ships_no_extra_key(anonymous_client, phones):
+    resp = anonymous_client.get(f"{BASE}/vocabularies/phones/terms/?level=Vendor")
+    assert all("extra" not in row for row in resp.json()["results"])
+
+
+def test_a_changed_hue_changes_the_etag(anonymous_client, tints):
+    """The bag rides the vocabulary's revision, which is already in the ETag —
+    a re-import that only repaints a swatch must still invalidate the page."""
+    from stapel_vocabularies.loader import load_fixture
+
+    path = f"{BASE}/vocabularies/tints/terms/?level=Tint"
+    before = anonymous_client.get(path)["ETag"]
+    load_fixture(
+        {
+            "slug": "tints",
+            "name": "Tints",
+            "levels": [{"name": "Tint"}],
+            "terms": [["Tint", "ink", "Ink", None, 0, 0, {"hue": "#000000"}]],
+        }
+    )
+    after = anonymous_client.get(path)
+    assert after["ETag"] != before
+    assert after.json()["results"][0]["extra"] == {"hue": "#000000"}
+
+
 def test_has_children_is_false_at_a_leaf(anonymous_client, phones):
     resp = anonymous_client.get(f"{BASE}/vocabularies/phones/terms/?level=Color")
     assert [row["has_children"] for row in resp.json()["results"]] == [False]

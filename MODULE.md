@@ -17,7 +17,8 @@ options. Three tables and one shape:
 ```
 Vocabulary(RevisionMixin)  slug (unique, 64), name (200), levels JSON, source (255), term_count
 Term                       vocabulary FK, level (64), code (128), label (255),
-                           labels JSON {lang: str}, external_id (64), sort, popularity
+                           labels JSON {lang: str}, external_id (64), sort, popularity,
+                           extra JSON {source-owned attrs}
                            unique (vocabulary, level, code); index (vocabulary, level, label)
 TermEdge                   parent FK Term, child FK Term
                            unique (parent, child); index (child)
@@ -76,7 +77,8 @@ carry it. A load bumps it exactly once per file, and so does a
 | `vocabularies.resolve` / `vocabularies.describe` | comm functions | `functions.py` | how a service without the tables asks about codes it already has |
 | `vocabularies.match` | comm function | `functions.py` | how a caller with no code at all resolves one free-text guess — scored, thresholded, refusable |
 | `vocabularies.children` | comm function | `functions.py` | how a caller with no code and no person to show a list to asks what the choices under one term ARE — a page, with `truncated`, so a caller reasoning about the set cannot mistake a cut-short page for a complete one |
-| `vocabularies.terms` | comm function | `functions.py` / `resolver.py` | how a caller that RENDERS a level gets it whole — `(code, label)` pairs in the level's own order, capped at `TERMS_LIMIT`. What `CommResolver.terms` is, and therefore what a category expanded by a `ref_select` feature draws its children from |
+| `vocabularies.terms` | comm function | `functions.py` / `resolver.py` | how a caller that RENDERS a level gets it whole — `(code, label)` pairs in the level's own order, capped at `TERMS_LIMIT`. What `CommResolver.terms` is, and therefore what a category expanded by a `ref_select` feature draws its children from. Its `extras` key (`{code: {...}}`, only the terms that have one) carries the source catalogue's own per-term attributes — the swatch behind a colour facet |
+| `Term.extra` / `terms_with_extra()` | JSON column + resolver method | `models.py` / `resolver.py` / the fixture's 7th column | what a renderer knows about a term beyond its label — `{"hue": "#1a1a1a"}` on a colour. Owned by the SOURCE catalogue, merged key by key on load, read by nothing in this module |
 | `vocabularies.set_popularity` | comm function | `functions.py` / `ranking.py` | how the host that owns the listings pushes the observed counts the popular band is built from |
 | `STAPEL_VOCABULARIES["POPULAR_BAND_SIZE"]` | integer | `conf.py` | how many terms of a level may sit in the popular band, on the write side and on the wire |
 | `STAPEL_VOCABULARIES["MATCH_MIN_SCORE"]` | float | `conf.py` | the floor `vocabularies.match` refuses below (default 0.8) |
@@ -96,7 +98,7 @@ permission question.
 |---|---|---|---|
 | GET | `vocabularies/` | — | `[{slug, name, levels, term_count, revision}]` |
 | GET | `vocabularies/{slug}/` | — | the same, one |
-| GET | `vocabularies/{slug}/terms/` | `level` (required), `parent`, `q`, `limit` ≤200 (default 50), `offset` | `{results: [{code, label, level, has_children, band}], total, popular_count}` |
+| GET | `vocabularies/{slug}/terms/` | `level` (required), `parent`, `q`, `limit` ≤200 (default 50), `offset` | `{results: [{code, label, level, has_children, band, extra?}], total, popular_count}` |
 | GET | `vocabularies/{slug}/terms/resolve/` | `level` (required), `codes` (csv, ≤200) | `{code: label}`, unknown codes omitted |
 
 Behaviour worth knowing before changing it:
@@ -349,6 +351,38 @@ Until a deployment has counts, a fixture's optional 6th column carries a
 curated rank. A row that OMITS the column leaves the live term's popularity
 alone rather than zeroing it, which is what keeps a nightly push from being
 erased by the next catalogue import.
+
+**The source's own attributes (`Term.extra`, 0.4.0).** A term is identity plus
+a label, and for one whole class of level that is not enough to render it: a
+facet over `Color` wants to draw a swatch, and the only thing in the world
+that knows «чёрный» is `#1a1a1a` is the catalogue the term came from. An
+importer measuring 78 colour terms across five vocabularies had nowhere to put
+one. So a term row grew an optional **7th column**, an object, merged into
+`Term.extra` key by key on load — `["Color", "chernyy", "чёрный", null, 0, 0,
+{"hue": "#1a1a1a"}]`.
+
+It is a bag the SOURCE owns, and three things follow. It is never part of
+identity: that stays `(vocabulary, level, code)`, and nothing in this module
+reads a key out of it — a consumer that finds no key it wants renders the term
+without it. It is never a second place for a label: `label` / `labels` answer
+that question, once. And it MERGES rather than replaces, because an additive
+load is two catalogues contributing to one vocabulary, and the file that knows
+a hue is not the file that knows a vendor's own shade code; a row that omits
+the column (or states `{}`) changes nothing, the same rule `popularity` states
+one column to the left.
+
+It reaches a reader three ways, and the shapes are deliberately not the same:
+
+- REST — `extra` on a term of `…/terms/?level=`, **omitted** when the term
+  carries none rather than `{}` on every row of a 2000-term page.
+- comm — `extras` on `vocabularies.terms`, `{code: {...}}`, its **own key**
+  and not a third element of each `[code, label]` row. A 0.3.0
+  `CommResolver.terms` unpacks those rows positionally, so widening them
+  would have made this release break every service still on the last one by
+  existing. Nobody is broken by a key they do not read.
+- in-process — **`terms_with_extra(vocabulary, level, *, parent, limit)`** on
+  both resolvers, `[(code, label, extra)]`. `terms()` keeps its pair, for the
+  same reason: stapel-categories takes it apart positionally too.
 
 **The match (`vocabularies.match`).** `resolve` answers about codes a caller
 already has. A composer holding a string out of a photo or a language model

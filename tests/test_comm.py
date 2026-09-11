@@ -241,6 +241,38 @@ def test_the_terms_payload_is_held_to_its_schema(makes):
         )
 
 
+def test_terms_carries_the_sources_own_bag_in_its_own_key(tints):
+    """`extras` is a KEY, not a third element of each row.
+
+    A 0.3.0 `CommResolver.terms` unpacks `for code, label in rows`, so a
+    widened row would make this release raise a ValueError per browse read in
+    every service still on the last one. A key nobody reads breaks nobody.
+    """
+    answer = call("vocabularies.terms", {"vocabulary": "tints", "level": "Tint"})
+    assert answer["terms"] == [["ink", "Ink"], ["snow", "Snow"], ["slate", "Slate"]]
+    assert answer["extras"] == {
+        "ink": {"hue": "#1a1a1a"},
+        "snow": {"hue": "#ffffff"},
+    }
+
+
+def test_a_row_of_the_reply_is_still_exactly_a_pair(tints):
+    """The 0.3.0 reader, written out: two names, and a raise if it got three."""
+    answer = call("vocabularies.terms", {"vocabulary": "tints", "level": "Tint"})
+    assert [(code, label) for code, label in answer["terms"]] == [
+        ("ink", "Ink"),
+        ("snow", "Snow"),
+        ("slate", "Slate"),
+    ]
+
+
+def test_a_level_where_nothing_carries_a_bag_answers_no_extras_at_all(makes):
+    """Not `{}` on every level: most levels have no source attributes, and a
+    key that is always there says nothing by being there."""
+    answer = call("vocabularies.terms", {"vocabulary": "makes", "level": "Make"})
+    assert "extras" not in answer
+
+
 # --- the event --------------------------------------------------------------
 
 

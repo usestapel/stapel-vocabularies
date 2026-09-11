@@ -24,7 +24,7 @@ pip install stapel-vocabularies
 
 | Fact | Value |
 |---|---|
-| Version | `0.3.0` |
+| Version | `0.4.0` |
 | Python | `>=3.11` (3.11, 3.12, 3.13, 3.14) |
 | HTTP operations | 4 |
 | Config axes | 1 |
@@ -179,10 +179,23 @@ A level's `parent` must be declared before it. That single rule is the whole
 acyclicity argument: a level can only point backwards, so no chain of parents
 can return to where it started.
 
-A term row is `[level, code, label, external_id, sort?, popularity?]`. `sort`
-ranks within a band; `popularity` says which band. Both are optional, and a
-row that omits `popularity` leaves whatever the live term holds — so a
-catalogue re-import never erases a band pushed from observed counts.
+A term row is `[level, code, label, external_id, sort?, popularity?, extra?]`.
+`sort` ranks within a band; `popularity` says which band. All three are
+optional, and a row that omits `popularity` leaves whatever the live term
+holds — so a catalogue re-import never erases a band pushed from observed
+counts.
+
+`extra` is a free-form object of attributes the **source catalogue owns**:
+`["Color", "chernyy", "чёрный", null, 0, 0, {"hue": "#1a1a1a"}]`, so a search
+facet over a colour level can draw a swatch. The only thing that knows «чёрный»
+is `#1a1a1a` is the catalogue the term came from, and until 0.4.0 there was
+nowhere to put it. It is never part of identity — that stays
+`(vocabulary, level, code)` — and never a second place to look for a label.
+Keys are merged into the live term one by one, so a second catalogue
+contributing to the same vocabulary adds what it knows without erasing what
+the first one knew. It reaches a reader as `extra` on a term of
+`…/terms/?level=`, as `extras` on `vocabularies.terms`, and as the third
+element of `resolver.terms_with_extra()`.
 
 ## License
 

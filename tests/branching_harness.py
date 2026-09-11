@@ -95,7 +95,10 @@ def main():
             "name": "Makes",
             "levels": [{"name": "Make"}, {"name": "Model", "parent": "Make"}],
             "terms": [
-                ["Make", "charlie", "Charlie", None],
+                # A bag on the first term, deliberately: 0.4.0 widened the
+                # MODEL, and the question this harness answers is whether the
+                # consumer it widened around still reads the same rows.
+                ["Make", "charlie", "Charlie", None, 0, 0, {"hue": "#1a1a1a"}],
                 ["Make", "alfa", "Alfa", None],
                 ["Make", "bravo", "Bravo", None],
                 ["Model", "alfa-one", "Alfa One", None],

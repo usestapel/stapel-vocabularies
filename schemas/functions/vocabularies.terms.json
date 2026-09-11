@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "vocabularies.terms",
-  "description": "A whole level's terms as (code, label) pairs — the BROWSE read behind resolver.terms(), which stapel-categories expands a category's children from. This object validates the request payload; the response shape ({terms, truncated}) is documented in $defs.Terms, and an unknown vocabulary or level answers null. Not vocabularies.children with a bigger number: children is a PAGE for a caller reasoning about a set (MAX_PAGE_SIZE, a typeahead's size, parent named as a {level, code} pair); this is the whole level for a caller RENDERING it (TERMS_LIMIT, parent given as the bare code it descended through).",
+  "description": "A whole level's terms as (code, label) pairs — the BROWSE read behind resolver.terms(), which stapel-categories expands a category's children from. This object validates the request payload; the response shape ({terms, truncated, extras?}) is documented in $defs.Terms, and an unknown vocabulary or level answers null. Not vocabularies.children with a bigger number: children is a PAGE for a caller reasoning about a set (MAX_PAGE_SIZE, a typeahead's size, parent named as a {level, code} pair); this is the whole level for a caller RENDERING it (TERMS_LIMIT, parent given as the bare code it descended through).",
   "type": "object",
   "required": ["vocabulary", "level"],
   "properties": {
@@ -34,6 +34,11 @@
             "maxItems": 2,
             "prefixItems": [{ "type": "string" }, { "type": "string" }]
           }
+        },
+        "extras": {
+          "type": "object",
+          "description": "The source catalogue's own per-term attributes, keyed by term code — {\"chernyy\": {\"hue\": \"#1a1a1a\"}} on a colour level, so a facet can draw a swatch (stapel-vocabularies >= 0.4.0). Only the terms that carry any appear, and the key is absent entirely when none do. Deliberately NOT a third element of each `terms` row: a 0.3.0 reader unpacks those rows as pairs (`for code, label in rows` in CommResolver.terms; a [:2] slice in stapel-categories' branching), so a wider row would make a 0.4.0 catalogue service break every 0.3.0 caller in the fleet, while a key an old reader does not know is simply not read. A caller that wants the bag alongside the labels uses resolver.terms_with_extra(), which zips the two here.",
+          "additionalProperties": { "type": "object" }
         },
         "truncated": {
           "type": "boolean",

@@ -178,7 +178,7 @@ def _vector_rows(vocabulary, level, parent_id, query, languages, cap, taken_ids)
     if parent_id is not None:
         terms = terms.filter(parent_edges__parent_id=parent_id)
     by_label = {}
-    for row in terms.values("id", "code", "label", "labels"):
+    for row in terms.values("id", "code", "label", "labels", "extra"):
         by_label.setdefault(row["label"], row)
     picked = []
     for label in labels:
@@ -207,6 +207,10 @@ def _vector_rows(vocabulary, level, parent_id, query, languages, cap, taken_ids)
             # search failed is not a recommended band.
             "band": "all",
             "match": "vector",
+            # Same term, same source attributes: a "did you mean" colour row
+            # draws the same swatch as a literal hit, or the list has two
+            # kinds of row that look different for no reason.
+            **({"extra": row["extra"]} if row["extra"] else {}),
         }
         for row in picked
     ]
@@ -407,7 +411,7 @@ class TermListView(SerializerSeamMixin, APIView):
                 terms = terms.order_by(*BAND_ORDER)
             total = terms.count()
             page = list(
-                terms.values("id", "code", "label", "labels", "popularity")[
+                terms.values("id", "code", "label", "labels", "popularity", "extra")[
                     offset:offset + limit
                 ]
             )
@@ -434,6 +438,11 @@ class TermListView(SerializerSeamMixin, APIView):
                         if row["popularity"] > 0 and offset + index < band_size
                         else "all"
                     ),
+                    # Omitted rather than sent empty: most levels carry no
+                    # source attributes at all, and a `"extra": {}` on every
+                    # row of a 2000-term page is bytes that say nothing. A
+                    # consumer reads "absent" and "empty" the same way.
+                    **({"extra": row["extra"]} if row["extra"] else {}),
                 }
                 for index, row in enumerate(page)
             ]

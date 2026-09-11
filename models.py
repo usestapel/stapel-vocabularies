@@ -140,6 +140,16 @@ class Term(models.Model):
     #: listing counts (``ranking.apply_popularity``) or curated in a
     #: fixture's 6th column until a deployment has any.
     popularity = models.IntegerField(default=0, db_index=True)
+    #: Free-form per-term attributes OWNED BY THE SOURCE CATALOGUE — the
+    #: fixture row's own 7th column, merged in on load. ``{"hue": "#1a1a1a"}``
+    #: on a colour term is the case that asked for it: a search facet over
+    #: ``Color`` draws a swatch, and the only place that knows «чёрный» is
+    #: ``#1a1a1a`` is the catalogue the term came from. Never part of
+    #: identity, never read by this module's own logic, never a second place
+    #: to put a label: identity is ``(vocabulary, level, code)``, the label
+    #: is ``label``/``labels``, and a consumer that finds no key it wants
+    #: here must render the term without it.
+    extra = models.JSONField(default=dict, blank=True)
 
     class Meta:
         constraints = [

@@ -174,6 +174,60 @@ def test_both_resolvers_answer_terms_identically(makes):
     )
 
 
+# --- terms_with_extra: the same read, widened -------------------------------
+
+
+def test_terms_answers_rows_a_two_element_unpack_reads(resolver, tints):
+    """The 0.3.0 shape, pinned against the release that widened the model.
+
+    stapel-categories' branching and ``CommResolver.terms`` both take these
+    rows apart positionally. A term that now carries a bag must still answer
+    a pair here, or 0.4.0 breaks a browse read by adding a column nobody
+    asked it for — so this unpacks two names and would raise if it got three.
+    """
+    for code, label in resolver.terms("tints", "Tint"):
+        assert isinstance(code, str) and isinstance(label, str)
+    assert resolver.terms("tints", "Tint") == [
+        ("ink", "Ink"),
+        ("snow", "Snow"),
+        ("slate", "Slate"),
+    ]
+
+
+def test_terms_with_extra_carries_the_sources_own_bag(resolver, tints):
+    """``(code, label, extra)`` — what a facet draws a swatch from."""
+    assert resolver.terms_with_extra("tints", "Tint") == [
+        ("ink", "Ink", {"hue": "#1a1a1a"}),
+        ("snow", "Snow", {"hue": "#ffffff"}),
+        ("slate", "Slate", {}),
+    ]
+
+
+def test_a_term_carrying_no_bag_answers_an_empty_one(resolver, tints):
+    """Not ``None``: a consumer reads keys off it, and ``{}`` has none."""
+    assert dict(resolver.terms_with_extra("tints", "Tint")[-1][2]) == {}
+
+
+def test_terms_with_extra_answers_nothing_for_an_unknown_level(resolver, tints):
+    """``[]`` and never a raise, the rule ``terms()`` already states."""
+    assert resolver.terms_with_extra("tints", "Gone") == []
+    assert resolver.terms_with_extra("nope", "Tint") == []
+
+
+def test_both_resolvers_answer_terms_with_extra_identically(tints):
+    assert OrmResolver().terms_with_extra("tints", "Tint") == CommResolver(
+    ).terms_with_extra("tints", "Tint")
+
+
+def test_the_widened_read_keeps_the_cap_and_the_scope(makes):
+    """It is the same query: the parent scope and the cap are not re-invented."""
+    assert OrmResolver().terms_with_extra("makes", "Model", parent="alfa") == [
+        ("alfa-one", "Alfa One", {}),
+        ("alfa-two", "Alfa Two", {}),
+    ]
+    assert len(OrmResolver().terms_with_extra("makes", "Make", limit=2)) == 2
+
+
 # --- the describe cache -----------------------------------------------------
 
 

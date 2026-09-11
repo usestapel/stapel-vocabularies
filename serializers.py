@@ -54,6 +54,14 @@ class TermSerializer(serializers.Serializer):
         "separator from `popular_count` rather than by scanning for the "
         "change.",
     )
+    extra = serializers.DictField(
+        required=False,
+        help_text="Free-form attributes the SOURCE CATALOGUE owns for this "
+        "term — `{\"hue\": \"#1a1a1a\"}` on a colour, which is what lets a "
+        "facet draw a swatch. Absent when the term carries none, which is "
+        "most terms of most levels; never part of identity, and never a "
+        "second place to look for the label.",
+    )
     match = serializers.CharField(
         required=False,
         help_text="Present (value `vector`) only on rows the similarity net "

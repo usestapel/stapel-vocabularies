@@ -14,7 +14,11 @@ Both also answer ``terms(vocabulary, level)``, which the protocol does NOT
 declare — the OPTIONAL listing reader stapel-categories (>= 0.22) generates a
 category's virtual children with. Both go through ``level_terms()``, so the
 two implementations cannot answer "what are this category's children"
-differently.
+differently. ``terms_with_extra`` is the same read widened to
+``(code, label, extra)`` for a caller that renders the source catalogue's own
+per-term attributes — a facet drawing a colour swatch from ``extra["hue"]``.
+It is a second method, not a wider ``terms``, because the pair is what every
+0.3.0 caller unpacks.
 
 Both cache ``describe`` **by revision**, never by wall clock alone: a level
 list is read on every config validation, and a re-imported catalogue must stop
@@ -94,7 +98,8 @@ def level_terms(
     level: str,
     parent: Optional[str] = None,
     limit: Optional[int] = None,
-) -> Optional[Tuple[List[Tuple[str, str]], bool]]:
+    with_extra: bool = False,
+) -> Optional[Tuple[List[tuple], bool]]:
     """``([(code, label)], truncated)`` for one level — or ``None``.
 
     ONE implementation behind two shapes: the in-process ``terms()`` reader
@@ -120,6 +125,13 @@ def level_terms(
     and any parent at all on a root level — scopes NOTHING and answers an
     empty list rather than the whole level, the rule ``_match_scope`` and
     ``children_function`` already state.
+
+    ``with_extra`` widens the rows to ``(code, label, extra)`` — the source
+    catalogue's own per-term bag (``Term.extra``), ``{}`` for a term carrying
+    none. It is a separate argument rather than a wider default because the
+    pair is what every 0.3.0 caller unpacks positionally, here and in
+    stapel-categories; a third element that arrives unasked is a caller's
+    ``ValueError``, not a new feature.
     """
     from .models import Term, Vocabulary
 
@@ -156,10 +168,16 @@ def level_terms(
     wanted = cap if limit is None else max(1, min(int(limit), cap))
     # One row more than asked for, never returned: `truncated` without a
     # second COUNT over the same set (`children_function`'s trick).
-    rows = list(terms.values_list("code", "label")[: wanted + 1])
+    columns = ("code", "label", "extra") if with_extra else ("code", "label")
+    rows = list(terms.values_list(*columns)[: wanted + 1])
     truncated = len(rows) > wanted
     if truncated and wanted == cap:
         _report_cap(vocabulary, level, cap)
+    if with_extra:
+        return [
+            (code, label, extra if isinstance(extra, dict) else {})
+            for code, label, extra in rows[:wanted]
+        ], truncated
     return [(code, label) for code, label in rows[:wanted]], truncated
 
 
@@ -268,6 +286,32 @@ class OrmResolver:
         the cap is not a browse level.
         """
         answer = level_terms(vocabulary, level, parent=parent, limit=limit)
+        return [] if answer is None else answer[0]
+
+    def terms_with_extra(
+        self,
+        vocabulary: str,
+        level: str,
+        *,
+        parent: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Tuple[str, str, dict]]:
+        """``[(code, label, extra)]`` — ``terms()`` plus the source's own bag.
+
+        Same query, same order, same cap, same ``[]`` for a catalogue this
+        deployment does not have. The only difference is the third element:
+        ``Term.extra``, the attributes the SOURCE catalogue owns, ``{}`` for
+        a term carrying none.
+
+        A separate method rather than a wider ``terms()`` because ``terms()``
+        is a shipped shape: stapel-categories and ``CommResolver`` both
+        unpack its rows, and a 0.3.0 checkout of either unpacks exactly two
+        elements. The caller that wants the bag — a facet drawing a colour
+        swatch from ``extra["hue"]`` — asks for it by name.
+        """
+        answer = level_terms(
+            vocabulary, level, parent=parent, limit=limit, with_extra=True
+        )
         return [] if answer is None else answer[0]
 
 
@@ -398,14 +442,52 @@ class CommResolver:
         ``[]`` here, so both implementations answer a consumer that reads
         anything but a list of pairs as "no values" the same way.
         """
+        answer = self._terms_answer(vocabulary, level, parent, limit)
+        rows = (answer or {}).get("terms") or []
+        return [(str(code), str(label)) for code, label in rows]
+
+    def terms_with_extra(
+        self,
+        vocabulary: str,
+        level: str,
+        *,
+        parent: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[Tuple[str, str, dict]]:
+        """``[(code, label, extra)]`` over the bus — see ``OrmResolver``.
+
+        The bag travels in the reply's OWN key, ``extras`` (``{code: {...}}``,
+        only the terms that carry one), not as a third element of each
+        ``terms`` row. A third element would be read by a 0.3.0
+        ``CommResolver.terms`` — which unpacks ``for code, label in rows`` —
+        as a ``ValueError`` per browse read, so the newest service in a fleet
+        would break the oldest one by existing. A key an old reader has never
+        heard of is simply not read.
+
+        A 0.3.0 server answers no ``extras`` at all, and every term then
+        carries ``{}``: the facet draws no swatches until the catalogue side
+        is upgraded, which is the honest answer to "this deployment has no
+        hues".
+        """
+        answer = self._terms_answer(vocabulary, level, parent, limit) or {}
+        extras = answer.get("extras") or {}
+        rows = answer.get("terms") or []
+        return [
+            (
+                str(code),
+                str(label),
+                dict(extras.get(code) or {}) if isinstance(extras, dict) else {},
+            )
+            for code, label in rows
+        ]
+
+    def _terms_answer(self, vocabulary, level, parent, limit):
         payload = {"vocabulary": vocabulary, "level": level}
         if parent not in (None, ""):
             payload["parent"] = str(parent)
         if limit is not None:
             payload["limit"] = int(limit)
-        answer = self._call("vocabularies.terms", payload)
-        rows = (answer or {}).get("terms") or []
-        return [(str(code), str(label)) for code, label in rows]
+        return self._call("vocabularies.terms", payload)
 
 
 def register_orm_resolver() -> Optional[OrmResolver]:

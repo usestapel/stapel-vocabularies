@@ -4,6 +4,70 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
+## [0.4.0] — 2026-09-11
+
+**Minor, because the fixture format grows a column.** Nothing that exists
+changes shape: every fixture written before this release loads byte for byte
+the same, `terms()` still answers pairs, and the `vocabularies.terms` rows are
+still `[code, label]`. The column is why this is not a patch — a format that
+grew is a format two sides have to agree about.
+
+### Added — `Term.extra`, the attributes the source catalogue owns
+
+A term is identity plus a label, and for one whole class of level that is not
+enough to draw it. A search facet over `Color` wants a swatch, and the only
+thing that knows «чёрный» is `#1a1a1a` is the catalogue the term came from. A
+client importer measured **78 colour terms across five vocabularies** and had
+nowhere to put one.
+
+- **`Term.extra`** — `JSONField(default=dict, blank=True)`, migration
+  `0003_term_extra`, **expand only**: a live row reads back `{}`, nothing is
+  rewritten, and a 0.3.0 process against a migrated database never selects the
+  column.
+- **Never identity.** That stays `(vocabulary, level, code)`. Nothing in this
+  module reads a key out of the bag — a consumer that finds no key it wants
+  renders the term without it — and it is never a second place to look for a
+  label (`label` / `labels` answer that, once).
+
+### Added — the fixture's optional 7th column
+
+`["Color", "chernyy", "чёрный", null, 0, 0, {"hue": "#1a1a1a"}]`. An object,
+merged into `Term.extra` **key by key**: a stated key wins, a key the row does
+not mention survives, and a row that omits the column (or states `{}`) changes
+nothing. That is the rule `popularity` already states one column to the left,
+and it is what an additive load needs — two catalogues contributing to one
+vocabulary, where the file that knows a hue is not the file that knows the
+vendor's own shade code.
+
+- `docs/vocabulary-fixture.schema.json` widened to `maxItems: 7`; a bare value
+  in the column is refused by the schema and by `loader.validate_fixture`, and
+  `tests/test_fixture_schema.py` puts every row width to both so the importer's
+  contract and the reader's gate cannot drift apart.
+- **Fixtures are byte-compatible.** A 4-, 5- or 6-column row loads exactly as
+  it did in 0.3.0 and the term it makes carries `{}`.
+
+### Added — three ways to read it, deliberately not one shape
+
+- **`OrmResolver.terms_with_extra(...)` / `CommResolver.terms_with_extra(...)`**
+  → `[(code, label, extra)]`. Same query, order, cap and `[]`-for-unknown as
+  `terms()`.
+- **`vocabularies.terms` gains `extras`** — `{code: {...}}`, only the terms
+  that carry one, and the key is absent entirely from a level where none do.
+- **`…/terms/?level=` rows gain `extra`**, omitted when the term carries none
+  rather than `{}` on every row of a 2000-term page. It rides the vocabulary's
+  revision, so a re-import that only repaints a swatch still moves the ETag.
+
+### Unchanged on purpose — `terms()` still answers pairs
+
+The bag travels in a key of its own instead of a third element of each row
+because **the pair is a shipped shape**: `CommResolver.terms` unpacks
+`for code, label in rows`, and stapel-categories' `branching._vocabulary_terms`
+slices `[:2]`. A widened row would have meant a 0.4.0 catalogue service
+raising a `ValueError` per browse read in every 0.3.0 service beside it — the
+newest member of a fleet breaking the oldest by existing. Nobody has ever been
+broken by a key they do not read. `tests/test_resolver.py` and
+`tests/test_comm.py` both pin the two-element unpack against this release.
+
 ## [0.3.0] — 2026-09-10
 
 **Minor, because a whole class of category now answers with children it did

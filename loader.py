@@ -81,10 +81,10 @@ def validate_fixture(fixture) -> None:
     level_names = {level["name"] for level in fixture["levels"]}
     declared: set = set()
     for index, row in enumerate(fixture["terms"]):
-        if not isinstance(row, list) or not 3 <= len(row) <= 6:
+        if not isinstance(row, list) or not 3 <= len(row) <= 7:
             raise FixtureError(
                 f"terms[{index}] must be "
-                "[level, code, label, external_id?, sort?, popularity?]"
+                "[level, code, label, external_id?, sort?, popularity?, extra?]"
             )
         if len(row) > 4 and not isinstance(row[4], int):
             raise FixtureError(f"terms[{index}].sort must be an integer rank")
@@ -96,6 +96,14 @@ def validate_fixture(fixture) -> None:
             raise FixtureError(
                 f"terms[{index}].popularity must be a non-negative integer "
                 "(0 = not in the popular band)"
+            )
+        # The 7th column is an OBJECT, never a bare value: it is a bag of
+        # named attributes the source catalogue owns, and a list or a string
+        # here means the writer meant a column this contract does not have.
+        if len(row) > 6 and not isinstance(row[6], dict):
+            raise FixtureError(
+                f"terms[{index}].extra must be an object of source-owned "
+                'attributes (e.g. {"hue": "#1a1a1a"})'
             )
         level, code, label = row[0], row[1], row[2]
         if level not in level_names:
@@ -121,8 +129,10 @@ def validate_fixture(fixture) -> None:
                 raise FixtureError(f"edges[{index}] names unknown level {name!r}")
 
 
-def _term_rows(fixture) -> List[Tuple[str, str, str, str, int, Optional[int]]]:
-    """``(level, code, label, external_id, sort, popularity)`` in fixture order.
+def _term_rows(
+    fixture,
+) -> List[Tuple[str, str, str, str, int, Optional[int], Optional[dict]]]:
+    """``(level, code, label, external_id, sort, popularity, extra)`` in fixture order.
 
     ``sort`` prefers the row's own 5th column (the optional rank the fixture
     contract grew in stapel-tools 0.62.1) over the row index. Row ORDER is
@@ -138,6 +148,14 @@ def _term_rows(fixture) -> List[Tuple[str, str, str, str, int, Optional[int]]]:
     catalogue re-import is not evidence that the band changed. A silent row
     therefore leaves whatever the live term holds; a stated one overwrites
     it, which is how a curator takes the band back.
+
+    ``extra`` is the optional 7th column and comes back as ``None`` when the
+    row does not state one — the same distinction, for the same reason. It is
+    MERGED into the live term's ``extra`` rather than replacing it: two
+    catalogues may contribute to one vocabulary (that is what an additive load
+    IS), and the one that knows a colour's hue is not necessarily the one that
+    knows its vendor code. A stated key wins; a key the row does not mention
+    survives; ``{}`` states nothing and therefore changes nothing.
     """
     rows = []
     for order, row in enumerate(fixture["terms"]):
@@ -145,7 +163,8 @@ def _term_rows(fixture) -> List[Tuple[str, str, str, str, int, Optional[int]]]:
         external_id = row[3] if len(row) > 3 and row[3] else ""
         sort = row[4] if len(row) > 4 else order
         popularity = row[5] if len(row) > 5 else None
-        rows.append((level, code, label, str(external_id), sort, popularity))
+        extra = row[6] if len(row) > 6 else None
+        rows.append((level, code, label, str(external_id), sort, popularity, extra))
     return rows
 
 
@@ -181,7 +200,7 @@ def _match_terms(rows, existing) -> Dict[Tuple[str, str], dict]:
 
     matched: Dict[Tuple[str, str], dict] = {}
     claimed: Dict[int, Tuple[str, str]] = {}
-    for level, code, label, external_id, _sort, _popularity in rows:
+    for level, code, label, external_id, _sort, _popularity, _extra in rows:
         current = by_ext.get((level, external_id)) if external_id else None
         if current is None:
             current = by_code.get((level, code))
@@ -242,7 +261,8 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
     rows = _term_rows(fixture)
     existing = list(
         Term.objects.filter(vocabulary=vocabulary).values(
-            "id", "level", "code", "label", "external_id", "sort", "popularity"
+            "id", "level", "code", "label", "external_id", "sort", "popularity",
+            "extra",
         )
     )
     matched = _match_terms(rows, existing)
@@ -250,7 +270,7 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
     to_create: List[Term] = []
     to_update: List[Term] = []
     renamed: List[Term] = []
-    for level, code, label, external_id, sort, popularity in rows:
+    for level, code, label, external_id, sort, popularity, extra in rows:
         current = matched.get((level, code))
         if current is None:
             to_create.append(
@@ -262,6 +282,7 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
                     external_id=external_id,
                     sort=sort,
                     popularity=popularity or 0,
+                    extra=dict(extra or {}),
                 )
             )
             continue
@@ -269,12 +290,18 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
         # holds, so one bulk_update can carry the column without a silent
         # row meaning "demote this". See _term_rows.
         rank = current["popularity"] if popularity is None else popularity
+        # Same rule for `extra`, one level deeper: the row's keys are merged
+        # over the live bag rather than replacing it, so a file that knows
+        # only a hue does not erase whatever else the term carries.
+        held = current["extra"] if isinstance(current["extra"], dict) else {}
+        bag = held if not extra else {**held, **extra}
         if (
             current["code"] != code
             or current["label"] != label
             or current["external_id"] != external_id
             or current["sort"] != sort
             or current["popularity"] != rank
+            or held != bag
         ):
             term = Term(
                 id=current["id"],
@@ -285,6 +312,7 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
                 external_id=external_id,
                 sort=sort,
                 popularity=rank,
+                extra=bag,
             )
             to_update.append(term)
             if current["code"] != code:
@@ -352,7 +380,7 @@ def load_fixture(fixture, replace: bool = False, batch_size: Optional[int] = Non
     if to_update:
         Term.objects.bulk_update(
             to_update,
-            ["code", "label", "external_id", "sort", "popularity"],
+            ["code", "label", "external_id", "sort", "popularity", "extra"],
             batch_size=batch,
         )
     if to_create:

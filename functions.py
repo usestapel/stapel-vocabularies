@@ -30,6 +30,15 @@ is not ``children`` with a bigger cap.
     # -> {"terms": [["apple", "Apple"], ["samsung", "Samsung"], ...],
     #     "truncated": False}
 
+The reply also carries ``extras`` — ``{code: {...}}``, the source catalogue's
+own per-term attributes — for the terms that have any, and not at all for a
+level where none do. A ``Color`` level is the case it exists for:
+
+    call("vocabularies.terms", {"vocabulary": "phone-models", "level": "Color"})
+    # -> {"terms": [["chernyy", "чёрный"], ["belyy", "белый"]],
+    #     "extras": {"chernyy": {"hue": "#1a1a1a"}, "belyy": {"hue": "#ffffff"}},
+    #     "truncated": False}
+
 The other two are the ones a caller with no code uses. ``match`` turns one
 free-text guess into one code or an explicit refusal; ``set_popularity``
 pushes the observed listing counts that decide which terms a level opens on.
@@ -253,6 +262,15 @@ def terms_function(payload: dict) -> dict:
     ``truncated`` says the level is bigger than what came back. It is not
     pagination — there is no cursor, deliberately — it is the browse read
     admitting that a level of this size should not be a browse level.
+
+    ``extras`` (>= 0.4.0) carries the source catalogue's own per-term bag —
+    ``{code: {...}}``, present only when some term in the answer has one, so
+    a colour level answers ``{"chernyy": {"hue": "#1a1a1a"}, ...}`` and a
+    vendor level answers nothing at all. It is a KEY OF ITS OWN rather than a
+    third element of each ``terms`` row on purpose: a 0.3.0
+    ``CommResolver.terms`` unpacks ``for code, label in rows``, so widening
+    the row would make this release break every service still on the last
+    one. Nobody has ever been broken by a key they do not read.
     """
     from .resolver import level_terms
 
@@ -261,11 +279,19 @@ def terms_function(payload: dict) -> dict:
         payload["level"],
         parent=payload.get("parent"),
         limit=payload.get("limit"),
+        with_extra=True,
     )
     if answer is None:
         return None
     rows, truncated = answer
-    return {"terms": [[code, label] for code, label in rows], "truncated": truncated}
+    reply = {
+        "terms": [[code, label] for code, label, _extra in rows],
+        "truncated": truncated,
+    }
+    extras = {code: extra for code, _label, extra in rows if extra}
+    if extras:
+        reply["extras"] = extras
+    return reply
 
 
 @function("vocabularies.set_popularity", schema=_schema("vocabularies.set_popularity"))
