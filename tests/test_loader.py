@@ -483,3 +483,57 @@ def test_an_eighth_column_is_refused():
     tinted["edges"] = []
     with pytest.raises(FixtureError):
         load_fixture(tinted)
+
+
+def test_a_null_in_an_optional_slot_states_nothing():
+    """Reaching the 7th column must not force a claim about the 5th and 6th.
+
+    The columns are positional. A writer that only knows a hue has to write
+    `sort` and `popularity` to get past them, and the only honest thing it
+    can say there is nothing — `popularity: 0` would DEMOTE the term, and a
+    catalogue re-import would erase a band pushed from observed listing
+    counts. `null` is that nothing.
+    """
+    tinted = fixture()
+    tinted["levels"] = [{"name": "Tint"}]
+    tinted["terms"] = [["Tint", "ink", "Ink", None], ["Tint", "snow", "Snow", None]]
+    tinted["edges"] = []
+    load_fixture(tinted)
+    Term.objects.filter(code="snow").update(popularity=90, sort=3)
+
+    hued = json.loads(json.dumps(tinted))
+    hued["terms"] = [
+        ["Tint", "ink", "Ink", None, None, None, {"hue": "#1a1a1a"}],
+        ["Tint", "snow", "Snow", None, None, None, {"hue": "#ffffff"}],
+    ]
+    load_fixture(hued)
+
+    snow = Term.objects.get(code="snow")
+    assert snow.extra == {"hue": "#ffffff"}
+    assert snow.popularity == 90, "a null popularity must not demote the term"
+    # A null sort falls back to row order, exactly as an absent column does —
+    # so this row is written back to its index, the value it would have had
+    # all along had nobody ever touched it.
+    assert snow.sort == 1
+
+
+def test_a_null_sort_is_the_row_index_not_a_zero():
+    tinted = fixture()
+    tinted["levels"] = [{"name": "Tint"}]
+    tinted["terms"] = [
+        ["Tint", "ink", "Ink", None, None, None, {"hue": "#1a1a1a"}],
+        ["Tint", "snow", "Snow", None, None, None, {"hue": "#ffffff"}],
+    ]
+    tinted["edges"] = []
+    load_fixture(tinted)
+    assert [t.sort for t in Term.objects.order_by("code")] == [0, 1]
+
+
+def test_a_null_popularity_on_a_fresh_term_is_the_alphabet():
+    """Unstated on a term that does not exist yet can only mean the default."""
+    tinted = fixture()
+    tinted["levels"] = [{"name": "Tint"}]
+    tinted["terms"] = [["Tint", "ink", "Ink", None, None, None, {"hue": "#1a1a1a"}]]
+    tinted["edges"] = []
+    load_fixture(tinted)
+    assert Term.objects.get(code="ink").popularity == 0

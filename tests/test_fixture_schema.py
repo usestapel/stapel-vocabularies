@@ -65,6 +65,11 @@ ROWS = [
     ),
     (["Tint", "ink", "Ink", None, 3, 7, {}], True, "an empty bag states nothing"),
     (
+        ["Tint", "ink", "Ink", None, None, None, {"hue": "#1a1a1a"}],
+        True,
+        "nulls in the slots a positional writer only crosses",
+    ),
+    (
         ["Tint", "ink", "Ink", None, 3, 7, "#1a1a1a"],
         False,
         "a bare value is not a bag of named attributes",

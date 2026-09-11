@@ -144,7 +144,8 @@ A term row is `[level, code, label, external_id, sort?, popularity?, extra?]`.
 `sort` ranks within a band; `popularity` says which band. All three are
 optional, and a row that omits `popularity` leaves whatever the live term
 holds — so a catalogue re-import never erases a band pushed from observed
-counts.
+counts. The columns are positional, so `null` states that same nothing for a
+writer that has to cross a column to reach a later one.
 
 `extra` is a free-form object of attributes the **source catalogue owns**:
 `["Color", "chernyy", "чёрный", null, 0, 0, {"hue": "#1a1a1a"}]`, so a search

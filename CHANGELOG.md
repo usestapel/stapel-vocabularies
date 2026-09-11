@@ -4,6 +4,26 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
+## [0.4.1] — 2026-09-11
+
+**Patch: `null` in an optional term-row slot states nothing.**
+
+0.4.0 put the source's bag in the fixture row's 7th column, and the columns
+are positional — so a writer that only knows a hue has to write `sort` and
+`popularity` to reach it. The only honest value it has for those is *nothing*,
+and until now there was no way to write it: an omitted column means unstated,
+but you cannot omit a column you are writing past. `popularity: 0` is not a
+synonym — it **demotes the term**, so every catalogue re-import would have
+erased the band pushed from observed listing counts, which is the exact
+accident the omitted column was designed to prevent.
+
+- `sort` and `popularity` accept `null`, meaning precisely what leaving the
+  column off means: row order for `sort`, "leave the live term's band alone"
+  for `popularity`. Schema widened to match; nothing that validated before
+  stops validating.
+- `[level, code, label, ext, null, null, {"hue": "#1a1a1a"}]` is now the
+  shape an importer with one fact to contribute writes.
+
 ## [0.4.0] — 2026-09-11
 
 **Minor, because the fixture format grows a column.** Nothing that exists

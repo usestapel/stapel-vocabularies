@@ -86,16 +86,24 @@ def validate_fixture(fixture) -> None:
                 f"terms[{index}] must be "
                 "[level, code, label, external_id?, sort?, popularity?, extra?]"
             )
-        if len(row) > 4 and not isinstance(row[4], int):
-            raise FixtureError(f"terms[{index}].sort must be an integer rank")
+        # `null` in an optional slot means UNSTATED, exactly as leaving the
+        # column off does. The columns are positional, so a writer that only
+        # has something to say about column 7 has to write 5 and 6 to reach
+        # it — and the only honest thing it can say there is nothing. Without
+        # this, emitting a hue would force emitting `popularity: 0`, which
+        # DEMOTES the term: a catalogue re-import would silently erase a band
+        # pushed from observed listing counts, the exact accident the omitted
+        # column exists to prevent.
+        if len(row) > 4 and row[4] is not None and not isinstance(row[4], int):
+            raise FixtureError(f"terms[{index}].sort must be an integer rank or null")
         # `bool` is an `int` in Python and `True` would silently become
         # popularity 1 — a curated band nobody meant to declare.
-        if len(row) > 5 and (
+        if len(row) > 5 and row[5] is not None and (
             isinstance(row[5], bool) or not isinstance(row[5], int) or row[5] < 0
         ):
             raise FixtureError(
                 f"terms[{index}].popularity must be a non-negative integer "
-                "(0 = not in the popular band)"
+                "(0 = not in the popular band) or null (= unstated)"
             )
         # The 7th column is an OBJECT, never a bare value: it is a bag of
         # named attributes the source catalogue owns, and a list or a string
@@ -135,7 +143,9 @@ def _term_rows(
     """``(level, code, label, external_id, sort, popularity, extra)`` in fixture order.
 
     ``sort`` prefers the row's own 5th column (the optional rank the fixture
-    contract grew in stapel-tools 0.62.1) over the row index. Row ORDER is
+    contract grew in stapel-tools 0.62.1) over the row index — unless the
+    column is ``null``, which states nothing and falls back to the index the
+    same way an absent column does. Row ORDER is
     canonical ``(level, code)`` for reviewability, so with no explicit rank
     every picker was code-alphabetical forever — a live stand's RAM dropdown
     opened on «0.1 МБ» with «10 ГБ» before «2 ГБ». Rows without the column
@@ -150,7 +160,9 @@ def _term_rows(
     it, which is how a curator takes the band back.
 
     ``extra`` is the optional 7th column and comes back as ``None`` when the
-    row does not state one — the same distinction, for the same reason. It is
+    row does not state one — the same distinction, for the same reason. A
+    writer reaching it must write columns 5 and 6 to get there; ``null`` in
+    either is how it says nothing about them. It is
     MERGED into the live term's ``extra`` rather than replacing it: two
     catalogues may contribute to one vocabulary (that is what an additive load
     IS), and the one that knows a colour's hue is not necessarily the one that
@@ -161,7 +173,7 @@ def _term_rows(
     for order, row in enumerate(fixture["terms"]):
         level, code, label = row[0], row[1], row[2]
         external_id = row[3] if len(row) > 3 and row[3] else ""
-        sort = row[4] if len(row) > 4 else order
+        sort = row[4] if len(row) > 4 and row[4] is not None else order
         popularity = row[5] if len(row) > 5 else None
         extra = row[6] if len(row) > 6 else None
         rows.append((level, code, label, str(external_id), sort, popularity, extra))
