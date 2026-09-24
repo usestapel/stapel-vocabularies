@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "vocabularies.match",
-  "description": "Resolve ONE free-text guess to ONE term code, with a score, or refuse. This object validates the request payload; the response is the two-shaped answer in $defs.Match. The caller is not a keyboard — it is a composer in another service holding a string it got out of a photo, a title or a language model, and whatever comes back is written into a listing with no human in between. So this is not a search: a search may answer loosely because a person reads five rows and picks. Here a wrong code is silently wrong data and a refusal costs one clarifying question, which is why every candidate is scored against a floor and everything under it comes back matched:false. The ladder is exact (1.0), unique prefix (0.9), then the vector seam, which returns the similarity the far side actually stated — an unscored answer is refused rather than assigned a number.",
+  "description": "Resolve ONE free-text guess to ONE term code, with a score, or refuse. This object validates the request payload; the response is the two-shaped answer in $defs.Match. The caller is not a keyboard — it is a composer in another service holding a string it got out of a photo, a title or a language model, and whatever comes back is written into a listing with no human in between. So this is not a search: a search may answer loosely because a person reads five rows and picks. Here a wrong code is silently wrong data and a refusal costs one clarifying question, which is why every candidate is scored against a floor and everything under it comes back matched:false. The ladder is exact (1.0), a unique alias — one of the names a label writes twice, «LADA» for «ВАЗ (LADA)» (0.95) — unique prefix (0.9), then the vector seam, which returns the similarity the far side actually stated — an unscored answer is refused rather than assigned a number.",
   "type": "object",
   "required": ["vocabulary", "level", "text"],
   "properties": {
@@ -56,11 +56,11 @@
         },
         "score": {
           "type": "number",
-          "description": "Confidence, on a hit: 1.0 for an exact hit on a folded label or on a code, 0.9 for a UNIQUE prefix hit, and for a vector hit the similarity the underlying Function stated, verbatim. Never a number this module invented."
+          "description": "Confidence, on a hit: 1.0 for an exact hit on a folded label or on a code, 0.95 for a UNIQUE alias hit (one of the names inside a label like «ВАЗ (LADA)»), 0.9 for a UNIQUE prefix hit, and for a vector hit the similarity the underlying Function stated, verbatim. Never a number this module invented."
         },
         "method": {
           "type": "string",
-          "enum": ["exact", "prefix", "vector"],
+          "enum": ["exact", "alias", "prefix", "vector"],
           "description": "Which rung answered. Worth logging: a deployment where everything arrives by `vector` is one whose catalogue labels do not match how its sellers write."
         },
         "reason": {

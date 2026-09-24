@@ -4,6 +4,25 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
+## [0.4.2] — 2026-09-24
+
+**Patch: a label that names a term twice answers to either name.**
+
+The autocatalogue spells a make «ВАЗ (LADA)». A photo stage reads «LADA» off
+the grille, `vocabularies.match` refused it (no exact, no prefix, no vector
+index), and on the live stand every field of the car scoped under the make —
+model, generation, modification and the eight fields below it — was left
+empty for the seller to fill by hand.
+
+- New rung between exact and prefix: **alias (0.95)**. A label is split into
+  its names on `(`, `)` and `/`; the text (split the same way) matches when
+  every one of its names is among the label's, compared as term slugs, so
+  «LADA», «Лада» and «LADA (ВАЗ)» all land on `vaz-lada`. Only labels with
+  more than one name qualify, and only when exactly ONE term in scope carries
+  them — «Москвич» over «Москвич (AZLK)» and «Москвич (2022)» is refused.
+- `method` gains `"alias"` in the response schema; nothing that validated
+  before stops validating.
+
 ## [0.4.1] — 2026-09-11
 
 **Patch: `null` in an optional term-row slot states nothing.**

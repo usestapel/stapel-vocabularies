@@ -55,6 +55,7 @@ pushes the observed listing counts that decide which terms a level opens on.
 """
 import json
 import logging
+import re
 from pathlib import Path
 
 from stapel_core.comm import function
@@ -68,6 +69,19 @@ _SCHEMAS_DIR = Path(__file__).resolve().parent / "schemas" / "functions"
 #: starting with it, and the next catalogue import can end that. Above the
 #: default floor because, while it holds, it is the only thing it can mean.
 PREFIX_SCORE = 0.9
+
+#: A label that names the thing twice — «ВАЗ (LADA)», «Škoda / Skoda» — is
+#: answered by either name on its own. Exact on the name, so above the
+#: prefix rung; below exact because the uniqueness it rests on belongs to
+#: this import, like the prefix's.
+ALIAS_SCORE = 0.95
+
+#: What separates the names inside one label.
+_ALIAS_SPLIT = re.compile(r"[()/]")
+
+#: A candidate set this large is refused rather than scanned: uniqueness
+#: over a truncated list is not uniqueness.
+_ALIAS_CANDIDATES_MAX = 200
 
 
 def _schema(name: str) -> dict:
@@ -371,7 +385,7 @@ def match_function(payload: dict) -> dict:
     contract is therefore two-shaped — a scored hit, or ``matched: false``
     — with no room for a maybe.
 
-    Three rungs, tried in order, each with a score the caller can threshold:
+    Four rungs, tried in order, each with a score the caller can threshold:
 
     * **exact (1.0)** — the folded label, the code itself, or the code
       ``slug.slugify_term`` would mint from the text. That third one is not
@@ -379,6 +393,8 @@ def match_function(payload: dict) -> dict:
       by, so «Самсунг» and "Samsung" fold onto ``samsung`` by construction,
       and a whole class of cross-script questions is answered with no
       embedding, no bill and no threshold.
+    * **alias (0.95)** — the text is one of the names a label writes twice
+      («LADA» or «Лада» for «ВАЗ (LADA)»), and exactly ONE term carries it.
     * **prefix (0.9)** — only when exactly ONE term starts with the text.
       Two candidates is not a weaker match, it is a different question
       ("iPhone 1" is two phones), and picking one of them writes the wrong
@@ -437,6 +453,12 @@ def match_function(payload: dict) -> dict:
         if exact:
             return _hit(exact[0], 1.0, "exact")
 
+    # --- one of the label's own names
+    if floor <= ALIAS_SCORE:
+        aliased = _match_by_alias(scope, text)
+        if aliased is not None:
+            return _hit(aliased, ALIAS_SCORE, "alias")
+
     # --- unique prefix
     if floor <= PREFIX_SCORE:
         prefixed = list(
@@ -447,6 +469,46 @@ def match_function(payload: dict) -> dict:
 
     # --- the vector seam
     return _match_by_vector(scope, text, floor)
+
+
+def _alias_names(text: str) -> frozenset:
+    """The slugs of the names a label or a query is made of."""
+    from .slug import slugify_term
+
+    names = (part.strip() for part in _ALIAS_SPLIT.split(text or ""))
+    return frozenset(slugify_term(name) for name in names if len(name) >= 2)
+
+
+def _match_by_alias(scope, text):
+    """The one term whose label carries every name the text is made of.
+
+    «LADA» and «Лада» are «ВАЗ (LADA)»: the catalogue wrote both names into
+    one label, and a model (or a seller) says one of them. Only a label with
+    more than one name qualifies — a single-name label was the exact rung's
+    question — and only when exactly ONE term carries them.
+    """
+    from django.db.models import Q
+
+    from .slug import slugify_term
+
+    wanted = _alias_names(text)
+    if not wanted:
+        return None
+    parts = [p.strip() for p in _ALIAS_SPLIT.split(text) if len(p.strip()) >= 2]
+    query = Q()
+    for part in parts:
+        query |= Q(label__icontains=part) | Q(code__icontains=slugify_term(part))
+    rows = list(
+        scope.filter(query).values("code", "label")[: _ALIAS_CANDIDATES_MAX + 1]
+    )
+    if len(rows) > _ALIAS_CANDIDATES_MAX:
+        return None
+    hits = []
+    for row in rows:
+        names = _alias_names(row["label"])
+        if len(names) > 1 and wanted <= names:
+            hits.append(row)
+    return hits[0] if len(hits) == 1 else None
 
 
 def _match_by_vector(scope, text, floor) -> dict:
@@ -491,6 +553,7 @@ def _match_by_vector(scope, text, floor) -> dict:
 
 
 __all__ = [
+    "ALIAS_SCORE",
     "PREFIX_SCORE",
     "children_function",
     "describe_function",

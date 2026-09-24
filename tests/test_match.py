@@ -306,3 +306,76 @@ def test_every_new_function_carries_its_schema(name):
     schema = json.loads((schemas / f"{name}.json").read_text(encoding="utf-8"))
     assert schema["title"] == name
     assert schema["additionalProperties"] is False
+
+
+# --- the alias rung: one label, two names -----------------------------------
+
+
+@pytest.fixture
+def cars(db):
+    """The autocatalogue's own spelling: «ВАЗ (LADA)» names the make twice."""
+    from stapel_vocabularies.loader import load_fixture
+
+    load_fixture(
+        {
+            "slug": "cars",
+            "name": "Cars",
+            "source": "test",
+            "levels": [{"name": "Make"}, {"name": "Model", "parent": "Make"}],
+            "terms": [
+                ["Make", "vaz-lada", "ВАЗ (LADA)", None],
+                ["Make", "gaz", "ГАЗ", None],
+                ["Make", "skoda", "Škoda / Skoda", None],
+                ["Make", "moskvich-azlk", "Москвич (AZLK)", None],
+                ["Make", "moskvich-2022", "Москвич (2022)", None],
+                ["Model", "priora", "Priora", None],
+            ],
+            "edges": [["Make", "vaz-lada", "Model", "priora"]],
+        }
+    )
+
+
+def car(**payload):
+    payload.setdefault("vocabulary", "cars")
+    return call("vocabularies.match", payload)
+
+
+@pytest.mark.parametrize("text", ["LADA", "lada", "Лада", "ВАЗ (LADA)", "LADA (ВАЗ)"])
+def test_either_name_of_a_two_name_label_is_that_term(cars, text):
+    """The live miss of 2026-09-24: the model read «LADA» off the grille,
+    the catalogue calls the make «ВАЗ (LADA)», and every field of the car
+    below the make was left empty."""
+    answer = car(level="Make", text=text)
+    assert answer["matched"] is True, answer
+    assert answer["code"] == "vaz-lada"
+    assert answer["score"] >= 0.9
+
+
+def test_an_alias_hit_is_scored_and_named(cars):
+    assert car(level="Make", text="LADA") == {
+        "matched": True,
+        "code": "vaz-lada",
+        "label": "ВАЗ (LADA)",
+        "score": 0.95,
+        "method": "alias",
+    }
+
+
+def test_a_slash_separates_names_too(cars):
+    assert car(level="Make", text="Skoda")["code"] == "skoda"
+
+
+def test_a_name_two_labels_share_is_not_an_alias(cars):
+    """«Москвич» is two makes here; picking one is a guess."""
+    assert car(level="Make", text="Москвич") == {
+        "matched": False,
+        "reason": "no_confident_match",
+    }
+
+
+def test_a_longer_phrase_is_not_an_alias(cars):
+    assert car(level="Make", text="LADA Priora")["matched"] is False
+
+
+def test_the_alias_rung_respects_the_floor(cars):
+    assert car(level="Make", text="LADA", min_score=0.99)["matched"] is False
