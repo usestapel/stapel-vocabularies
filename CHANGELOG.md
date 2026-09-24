@@ -4,7 +4,13 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
-## [0.4.2] — 2026-09-24
+## [0.4.3] — 2026-09-24
+
+**Patch: 0.4.2 re-cut.** The v0.4.2 tag never reached PyPI — its CI failed on
+`docs/llms.txt` still naming 0.4.1. Same code; the generated docs now carry
+the version.
+
+## [0.4.2] — 2026-09-24 (not published)
 
 **Patch: a label that names a term twice answers to either name.**
 
