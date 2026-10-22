@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stapel-vocabularies"
-version = "0.4.3"
+version = "0.4.4"
 description = "Reference vocabularies (levels, terms, edges) behind stapel-attributes' ref_select types, for the Stapel framework"
 readme = "README.md"
 license = { text = "MIT" }
@@ -28,7 +28,7 @@ dependencies = [
     # config layer, the error registry, comm (Functions + the outbox emit) and
     # ReadOnlyOrStaff. 0.30.0 is the floor for stapel_core.django.mounts,
     # which checks.py W002 measures the deployment's URL surface with.
-    "stapel-core>=0.30.0,<1.0",
+    "stapel-core>=0.92.1,<1.0",
     # The VocabularyResolver protocol this module implements lives in L1 and
     # arrived in 0.5.0. This is a FLOOR, not a preference: on anything older
     # AppConfig.ready() finds no register_vocabulary_resolver, no resolver is

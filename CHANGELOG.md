@@ -4,6 +4,13 @@ All notable changes to stapel-vocabularies are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning: pre-1.0 semver — **minor = breaking**, patch = additive/fixes.
 
+## [0.4.4] — 2026-10-22
+
+- **Floor `stapel-core>=0.92.1`.** This package's CONFIG.MD has `settings`
+  rows, which core's manifest reader accepts only from 0.92.1; below it
+  `manage.py check` raised `ConfigManifestError` in every project installing
+  this package. `stapel-sibling-lint` SIB007 now refuses the combination.
+
 ## [0.4.3] — 2026-09-24
 
 **Patch: 0.4.2 re-cut.** The v0.4.2 tag never reached PyPI — its CI failed on
