@@ -1,8 +1,8 @@
-# stapel-vocabularies 0.4.4
+# stapel-vocabularies 0.4.5
 
 Reference vocabularies too large to inline into a category's feature schema — 14 962 phone models, 107 049 car modifications — stored as levels, terms and parent/child edges rather than as paths, so one 'black' is shared by every model that comes in black and can be translated once and faceted on. Ships the public typeahead and cascade reads a listing composer needs (ETag'd on a revision, anonymous, no cookie), the two VocabularyResolver implementations stapel-attributes' ref_select / ref_hierarchical_select types validate values through (in-process and over comm), a batched transactional loader for reviewed fixtures that spends one revision and one event per file, and Django-free converters that turn a vendor's nested XML or CSV catalogue into such a fixture without loading the document into memory.
 
-Contract: axes 1 · surface 14 · extension points 7 · operations 4 · error codes 45.
+Contract: axes 1 · surface 14 · extension points 7 · operations 4 · error codes 46.
 Generated from docs/capabilities.json by `stapel-llms-txt` — do not edit; drift-gated by `make contract-check`.
 
 ## Configuration axes — what a product switches on
@@ -76,7 +76,7 @@ Paths are relative to `/vocabularies/api/v1/vocabularies/`.
 - GET /{slug}/terms/resolve/ — vocabularies_api_v1_vocabularies_terms_resolve_retrieve
 - GET /{slug}/terms/ — vocabularies_api_v1_vocabularies_terms_retrieve
 
-## Error codes (45) — the StapelError envelope
+## Error codes (46) — the StapelError envelope
 Render `t(code, params)`; branch UX on the remediation. Localized text lives in docs/errors.<lang>.md, not here.
 - error.400.bad_request [400] fix_input
 - error.400.captcha_invalid [400] retry
@@ -94,6 +94,7 @@ Render `t(code, params)`; branch UX on the remediation. Localized text lives in 
 - error.400.field.required [400] fix_input {field}
 - error.400.field.unique [400] fix_input {field}
 - error.400.invalid_ad_id [400] fix_input
+- error.400.too_many_ids [400] fix_input {requested,limit}
 - error.400.validation_error [400] fix_input
 - error.400.verification_failed [400] verify
 - error.400.verification_invalid_factor [400] verify
@@ -119,7 +120,7 @@ Render `t(code, params)`; branch UX on the remediation. Localized text lives in 
 - error.422.unprocessable_entity [422] wait_and_retry
 - error.423.locked [423] wait_and_retry
 - error.423.verification_locked [423] wait_and_retry
-- error.429.rate_limit [429] wait_and_retry {retry_after_minutes}
+- error.429.rate_limit [429] wait_and_retry {retry_after_display,retry_after,retry_after_minutes}
 - error.429.too_many_requests [429] wait_and_retry
 - error.500.internal [500] contact_support
 - error.503.mandate_unavailable [503] retry

@@ -40,7 +40,7 @@ if _PY != (3, 12):
 REPO = Path(__file__).resolve().parent.parent
 DOCS = REPO / "docs"
 TRIAD = ("schema.json", "flows.json", "errors.json")
-ARTIFACTS = TRIAD + ("capabilities.json", "llms.txt")
+ARTIFACTS = TRIAD + ("schema.v2.json", "capabilities.json", "llms.txt")
 #: Must match the Makefile's `contract` / `contract-check` targets.
 LLMS_TXT_BUDGET = "4000"
 

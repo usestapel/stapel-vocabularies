@@ -24,13 +24,13 @@ pip install stapel-vocabularies
 
 | Fact | Value |
 |---|---|
-| Version | `0.4.4` |
+| Version | `0.4.5` |
 | Python | `>=3.11` (3.11, 3.12, 3.13, 3.14) |
 | HTTP operations | 4 |
 | Config axes | 1 |
 | Usage surface | 14 |
 | Extension points | 7 |
-| Error codes | 45 |
+| Error codes | 46 |
 | Fleet dependencies | [`stapel-attributes`](https://github.com/usestapel/stapel-attributes) · [`stapel-categories`](https://github.com/usestapel/stapel-categories) (optional) · [`stapel-core`](https://github.com/usestapel/stapel-core) |
 
 ## Documentation

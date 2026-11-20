@@ -1,0 +1,462 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "",
+    "version": "0.0.0",
+    "x-stapel-contract": 2
+  },
+  "paths": {
+    "/vocabularies/api/v1/vocabularies/": {
+      "get": {
+        "operationId": "vocabularies_api_v1_vocabularies_list",
+        "description": "Every vocabulary this deployment holds, with its levels and revision. Cacheable: the ETag covers the highest revision and the number of vocabularies.\n\n**Permissions:** `ReadOnlyOrStaff`",
+        "summary": "List vocabularies",
+        "tags": [
+          "vocabularies"
+        ],
+        "security": [
+          {
+            "JWTCookieAuth": []
+          },
+          {
+            "JWTBearerAuth": []
+          },
+          {}
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Vocabulary"
+                  }
+                }
+              }
+            },
+            "description": ""
+          }
+        }
+      }
+    },
+    "/vocabularies/api/v1/vocabularies/{slug}/": {
+      "get": {
+        "operationId": "vocabularies_api_v1_vocabularies_retrieve",
+        "description": "``GET vocabularies/{slug}/`` — one vocabulary.\n\n**Permissions:** `ReadOnlyOrStaff`",
+        "summary": "Retrieve a vocabulary",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "vocabularies"
+        ],
+        "security": [
+          {
+            "JWTCookieAuth": []
+          },
+          {
+            "JWTBearerAuth": []
+          },
+          {}
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vocabulary"
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StapelError"
+                }
+              }
+            },
+            "description": "Not Found",
+            "x-stapel-errors": [
+              "error.404.vocabularies_vocabulary_not_found"
+            ]
+          }
+        }
+      }
+    },
+    "/vocabularies/api/v1/vocabularies/{slug}/terms/": {
+      "get": {
+        "operationId": "vocabularies_api_v1_vocabularies_terms_retrieve",
+        "description": "A page of terms at `level`, optionally the children of a `parent` term at the level above, optionally matching `q`. The query is expanded to match variants (cross-script, aliases) by the deployment's configured expander; a label starting with any variant ranks before the rest, then the popular band, then the level's own sort order and label. Rows lead with the **popular band** — the short recommended set a level opens on instead of whatever the alphabet put first. Each row carries `band` (`popular` / `all`) and the page carries `popular_count`, the number of leading rows in the band, so a control draws its separator without guessing. `has_children` is what tells a cascading control whether to ask for the next level. `total` counts the whole filtered set, before limit and offset.\n\n**Permissions:** `ReadOnlyOrStaff`",
+        "summary": "Search the terms of one level",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "level",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Level to list. Required.",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Page size, 1..200 (default 50)."
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Rows to skip."
+          },
+          {
+            "in": "query",
+            "name": "parent",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Code of a term at the parent level; restricts the page to its children."
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Case-insensitive substring of the label, matched against every variant the configured query expander returns (the literal query always among them)."
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "vocabularies"
+        ],
+        "security": [
+          {
+            "JWTCookieAuth": []
+          },
+          {
+            "JWTBearerAuth": []
+          },
+          {}
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TermPage"
+                }
+              }
+            },
+            "description": ""
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StapelError"
+                }
+              }
+            },
+            "description": "Bad Request",
+            "x-stapel-errors": [
+              "error.400.vocabularies_bad_parent"
+            ]
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StapelError"
+                }
+              }
+            },
+            "description": "Not Found",
+            "x-stapel-errors": [
+              "error.404.vocabularies_level_not_found",
+              "error.404.vocabularies_vocabulary_not_found"
+            ]
+          }
+        }
+      }
+    },
+    "/vocabularies/api/v1/vocabularies/{slug}/terms/resolve/": {
+      "get": {
+        "operationId": "vocabularies_api_v1_vocabularies_terms_resolve_retrieve",
+        "description": "`{code: label}` for the codes named in `codes` (comma separated, at most 200 — the rest are ignored). Unknown codes are omitted, so a caller falls back to the code, which is what a stored DAO value does when its labels are missing.\n\n**Permissions:** `ReadOnlyOrStaff`",
+        "summary": "Resolve term codes to labels",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "codes",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated term codes, at most 200.",
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "level",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Level the codes belong to. Required.",
+            "required": true
+          },
+          {
+            "in": "path",
+            "name": "slug",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "tags": [
+          "vocabularies"
+        ],
+        "security": [
+          {
+            "JWTCookieAuth": []
+          },
+          {
+            "JWTBearerAuth": []
+          },
+          {}
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              }
+            },
+            "description": ""
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StapelError"
+                }
+              }
+            },
+            "description": "Not Found",
+            "x-stapel-errors": [
+              "error.404.vocabularies_level_not_found",
+              "error.404.vocabularies_vocabulary_not_found"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BandEnum": {
+        "enum": [
+          "popular",
+          "all"
+        ],
+        "type": "string",
+        "description": "* `popular` - popular\n* `all` - all"
+      },
+      "Level": {
+        "type": "object",
+        "description": "One level of a vocabulary.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "parent": {
+            "type": "string",
+            "nullable": true,
+            "description": "Name of the level this one hangs off; null for a root level."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "StapelError": {
+        "type": "object",
+        "description": "Structured error returned by all Stapel API endpoints.",
+        "properties": {
+          "localizable_error": {
+            "type": "string",
+            "description": "Translation key for client-side localization",
+            "example": "error.404.not_found"
+          },
+          "error": {
+            "type": "string",
+            "description": "Human-readable fallback/debug message — not reliably English,"
+          },
+          "params": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Context values for template placeholders",
+            "example": {
+              "retry_after": 30
+            }
+          },
+          "error_language": {
+            "type": "string",
+            "description": "The language `error` is written in (e.g. 'en', 'ru'),"
+          }
+        },
+        "required": [
+          "error",
+          "localizable_error"
+        ]
+      },
+      "Term": {
+        "type": "object",
+        "description": "One term of one level.",
+        "properties": {
+          "code": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "label": {
+            "type": "string",
+            "description": "Resolved for the request's Accept-Language when the term carries a translation, otherwise the term's own label.",
+            "maxLength": 255
+          },
+          "level": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "has_children": {
+            "type": "boolean",
+            "description": "Whether this term has any child term — what tells a cascading control whether to ask for the next level."
+          },
+          "band": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BandEnum"
+              }
+            ],
+            "description": "Which band this row is in: `popular` for the short recommended band the level opens on, `all` for the alphabet under it. Rows are ordered popular-band-first, so a control renders the separator from `popular_count` rather than by scanning for the change.\n\n* `popular` - popular\n* `all` - all"
+          },
+          "extra": {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Free-form attributes the SOURCE CATALOGUE owns for this term — `{\"hue\": \"#1a1a1a\"}` on a colour, which is what lets a facet draw a swatch. Absent when the term carries none, which is most terms of most levels; never part of identity, and never a second place to look for the label."
+          },
+          "match": {
+            "type": "string",
+            "description": "Present (value `vector`) only on rows the similarity net appended under a thin deterministic answer — a 'did you mean' row. Absent on every literal match."
+          }
+        },
+        "required": [
+          "band",
+          "code",
+          "has_children",
+          "label",
+          "level"
+        ]
+      },
+      "TermPage": {
+        "type": "object",
+        "description": "One page of terms plus the size of the whole filtered set.",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Term"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "description": "Number of terms matching level/parent/q, before limit and offset — plus any vector-appended rows, so it never claims fewer rows than the page shows."
+          },
+          "popular_count": {
+            "type": "integer",
+            "description": "How many LEADING rows of `results` are in the popular band. The separator goes after index popular_count - 1; 0 means this page has no popular band (a page past the boundary, a level nobody has ranked, or a `q` search whose top hit is a plain prefix match)."
+          }
+        },
+        "required": [
+          "popular_count",
+          "results",
+          "total"
+        ]
+      },
+      "Vocabulary": {
+        "type": "object",
+        "description": "A vocabulary as the catalogue endpoints render it.",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "maxLength": 64
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "levels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Level"
+            }
+          },
+          "term_count": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "integer",
+            "description": "Cache key of the whole vocabulary; also the ETag and the vocabulary.changed payload."
+          }
+        },
+        "required": [
+          "levels",
+          "name",
+          "revision",
+          "slug",
+          "term_count"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "JWTBearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT access token in the `Authorization: Bearer <token>` header — the credential a native client sends. When the JWT cookie is also present, the cookie wins."
+      },
+      "JWTCookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "stapel_jwt",
+        "description": "JWT token stored in cookie. Login via /auth/admin/ to get the cookie."
+      }
+    }
+  }
+}
